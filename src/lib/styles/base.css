@@ -1,0 +1,24 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; min-width: 1000px; height: 100%; min-height: 680px; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 13px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 20px; line-height: 24px; letter-spacing: -0.04em; }
+h2 { font-size: 24px; line-height: 28px; letter-spacing: -0.04em; }
+h3 { font-size: 15px; line-height: 20px; }
+.eyebrow, .section-label { color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.icon-button { width: 32px; height: 32px; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius); background: transparent; }
+.icon-button:hover { border-color: var(--border); background: var(--surface-raised); }
+.quiet-button, .danger-button, .primary-button { min-height: 32px; border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; background: transparent; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
+.quiet-button:hover { background: var(--surface); }
+.primary-button { color: #fff; border-color: var(--accent-active); background: var(--accent); }
+.primary-button:hover { background: var(--accent-active); }
+.danger-button { color: var(--error); border-color: color-mix(in srgb, var(--error), transparent 30%); }
+.danger-button:hover { color: #fff; background: var(--error); }
+input, select { min-height: 36px; width: 100%; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); padding: 8px 10px; }
+input:hover, select:hover { border-color: var(--text-muted); }
+kbd { display: inline-block; min-width: 22px; padding: 2px 4px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 3px; background: var(--surface-raised); text-align: center; font-size: 10px; }
+.launch-state { width: 100vw; height: 100vh; display: grid; place-content: center; justify-items: center; gap: 12px; background: var(--bg); color: var(--text-secondary); }
+.launch-mark { display: grid; place-items: center; width: 48px; height: 48px; border: 2px solid var(--border-strong); font-weight: 800; color: var(--text); }
+.launch-state.error .launch-mark { color: var(--error); border-color: var(--error); }

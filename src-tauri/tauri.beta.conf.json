@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PixelDone Beta",
+  "identifier": "com.milesxue.pixeldone.windows.beta",
+  "app": {
+    "windows": [{ "label": "main", "title": "PixelDone Beta" }]
+  }
+}
