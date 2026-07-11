@@ -3,13 +3,15 @@ import type {
   AppSettings,
   AppSnapshot,
   Checklist,
+  ConflictResolutionChoice,
   MutationResult,
   ReminderRepeat,
   SnapshotDelta,
   SortMode,
   TodoDraft,
   TodoItem,
-  TodoPriority
+  TodoPriority,
+  SyncConflictView
 } from '$lib/generated/ipc';
 
 declare global {
@@ -25,27 +27,36 @@ let browserSnapshot: AppSnapshot = {
   sortMode: 'PRIORITY',
   hideCompleted: false,
   quickDelete: false,
+  showDeadlineCountdown: false,
+  checklistHistory: [],
   settings: {
     darkTheme: false,
     dock: { plusPlacement: 'CENTER', actions: ['SORT', 'DEADLINE', 'HIDE_DONE', 'DELETE_DONE'] },
     neverShowUpdateDialog: false,
-    futureSyncEnabled: false
+    futureSyncEnabled: false,
+    languageMode: 'SYSTEM'
   },
+  auth: { cloudAvailable: true, signedIn: false, userId: null, userEmail: null, insecureHttp: true },
+  sync: { state: 'SIGNED_OUT', message: '浏览器预览模式', remoteVersion: null, pendingCount: 0, conflictCount: 0, insecureHttp: true },
+  reminder: { state: 'IDLE', activeTodoIds: [], lastFiredAtMillis: null },
+  update: { state: 'CURRENT', currentVersion: '3.1.0', availableVersion: null, downloadUrl: null, source: 'preview', message: null },
   checklists: [
     {
       id: 'main',
       name: 'MAIN',
       kind: 'NORMAL',
       createdAtMillis: now,
+      updatedAtMillis: now,
+      remoteVersion: null,
       items: [
         demoTodo('demo-xhigh', '完成 PixelDone Windows 架构审查', 'XHIGH', now + 45 * 60_000),
         demoTodo('demo-medium', '核对 Android 3.0.3 功能矩阵', 'MEDIUM', now + 3 * 60 * 60_000),
         { ...demoTodo('demo-done', '保留官方 Tauri 模板提交', 'LOW', now - 60_000), completed: true }
       ]
     },
-    { id: 'work', name: 'WORK', kind: 'NORMAL', createdAtMillis: now + 1, items: [] },
-    { id: 'trash', name: 'TRASH', kind: 'TRASH', createdAtMillis: now, items: [] },
-    { id: 'settings', name: 'SETTINGS', kind: 'SETTINGS', createdAtMillis: now, items: [] }
+    { id: 'work', name: 'WORK', kind: 'NORMAL', createdAtMillis: now + 1, updatedAtMillis: now + 1, remoteVersion: null, items: [] },
+    { id: 'trash', name: 'TRASH', kind: 'TRASH', createdAtMillis: now, updatedAtMillis: now, remoteVersion: null, items: [] },
+    { id: 'settings', name: 'SETTINGS', kind: 'SETTINGS', createdAtMillis: now, updatedAtMillis: now, remoteVersion: null, items: [] }
   ]
 };
 
@@ -57,11 +68,13 @@ function demoTodo(id: string, title: string, priority: TodoPriority, dueAtMillis
     dueAtMillis,
     completed: false,
     createdAtMillis: now,
+    updatedAtMillis: now,
     reminderRepeat: 'NONE',
     imageFileName: null,
     trashedFromChecklistId: null,
     trashedFromChecklistName: null,
-    trashedAtMillis: null
+    trashedAtMillis: null,
+    remoteVersion: null
   };
 }
 
@@ -88,7 +101,13 @@ function diff(before: AppSnapshot, after: AppSnapshot, changedIds: string[]): Mu
     sortMode: before.sortMode === after.sortMode ? null : after.sortMode,
     hideCompleted: before.hideCompleted === after.hideCompleted ? null : after.hideCompleted,
     quickDelete: before.quickDelete === after.quickDelete ? null : after.quickDelete,
-    settings: JSON.stringify(before.settings) === JSON.stringify(after.settings) ? null : after.settings
+    showDeadlineCountdown: before.showDeadlineCountdown === after.showDeadlineCountdown ? null : after.showDeadlineCountdown,
+    checklistHistory: JSON.stringify(before.checklistHistory) === JSON.stringify(after.checklistHistory) ? null : after.checklistHistory,
+    settings: JSON.stringify(before.settings) === JSON.stringify(after.settings) ? null : after.settings,
+    auth: JSON.stringify(before.auth) === JSON.stringify(after.auth) ? null : after.auth,
+    sync: JSON.stringify(before.sync) === JSON.stringify(after.sync) ? null : after.sync,
+    reminder: JSON.stringify(before.reminder) === JSON.stringify(after.reminder) ? null : after.reminder,
+    update: JSON.stringify(before.update) === JSON.stringify(after.update) ? null : after.update
   };
   return { revision: after.revision, changedIds, snapshotDelta };
 }
@@ -132,6 +151,7 @@ export const api = {
     if (isTauri()) return invoke('select_checklist', { expectedRevision, checklistId });
     return browserMutation(expectedRevision, (snapshot) => {
       snapshot.selectedChecklistId = checklistId;
+      snapshot.checklistHistory.push(browserSnapshot.selectedChecklistId);
       return [checklistId];
     });
   },
@@ -147,7 +167,9 @@ export const api = {
         name: normalized,
         kind: 'NORMAL',
         items: [],
-        createdAtMillis: Date.now()
+        createdAtMillis: Date.now(),
+        updatedAtMillis: Date.now(),
+        remoteVersion: null
       });
       snapshot.selectedChecklistId = id;
       return [id];
@@ -192,10 +214,12 @@ export const api = {
         ...value,
         completed: false,
         createdAtMillis: Date.now(),
+        updatedAtMillis: Date.now(),
         imageFileName: null,
         trashedFromChecklistId: null,
         trashedFromChecklistName: null,
-        trashedAtMillis: null
+        trashedAtMillis: null,
+        remoteVersion: null
       });
       return [checklistId, id];
     });
@@ -251,6 +275,7 @@ export const api = {
           kind: 'NORMAL',
           items: [],
           createdAtMillis: Date.now()
+          ,updatedAtMillis: Date.now(), remoteVersion: null
         };
         snapshot.checklists.splice(snapshot.checklists.findIndex((list) => list.kind !== 'NORMAL'), 0, target);
       }
@@ -315,6 +340,72 @@ export const api = {
       snapshot.settings = jsonClone(settings);
       return ['settings'];
     });
+  },
+  async backChecklist(expectedRevision: number): Promise<MutationResult> {
+    if (isTauri()) return invoke('back_checklist', { expectedRevision });
+    return browserMutation(expectedRevision, (snapshot) => {
+      const id = snapshot.checklistHistory.pop();
+      if (id) snapshot.selectedChecklistId = id;
+      return id ? [id] : [];
+    });
+  },
+  async purgeAllTrash(expectedRevision: number): Promise<MutationResult> {
+    if (isTauri()) return invoke('purge_all_trash', { expectedRevision });
+    return browserMutation(expectedRevision, (snapshot) => {
+      const trash = snapshot.checklists.find((list) => list.kind === 'TRASH')!;
+      const ids = trash.items.map((item) => item.id);
+      trash.items = [];
+      return ['trash', ...ids];
+    });
+  },
+  async setDeadlineCountdown(expectedRevision: number, visible: boolean): Promise<MutationResult> {
+    if (isTauri()) return invoke('set_deadline_countdown', { expectedRevision, visible });
+    return browserMutation(expectedRevision, (snapshot) => {
+      snapshot.showDeadlineCountdown = visible;
+      return ['deadline-countdown'];
+    });
+  },
+  async signIn(expectedRevision: number, email: string, password: string): Promise<MutationResult> {
+    return invoke('auth_sign_in', { expectedRevision, email, password });
+  },
+  async signUp(expectedRevision: number, email: string, password: string): Promise<MutationResult> {
+    return invoke('auth_sign_up', { expectedRevision, email, password });
+  },
+  async signOut(expectedRevision: number): Promise<MutationResult> {
+    return invoke('auth_sign_out', { expectedRevision });
+  },
+  async resetPassword(expectedRevision: number, email: string): Promise<MutationResult> {
+    return invoke('auth_reset_password', { expectedRevision, email });
+  },
+  async syncNow(expectedRevision: number): Promise<MutationResult> {
+    return invoke('sync_now', { expectedRevision });
+  },
+  async loadConflicts(): Promise<SyncConflictView[]> {
+    return isTauri() ? invoke('load_sync_conflicts') : [];
+  },
+  async resolveConflict(expectedRevision: number, recordType: string, localId: string, choice: ConflictResolutionChoice): Promise<MutationResult> {
+    return invoke('resolve_sync_conflict', { expectedRevision, recordType, localId, choice });
+  },
+  async attachImage(expectedRevision: number, checklistId: string, todoId: string, sourcePath: string): Promise<MutationResult> {
+    return invoke('attach_todo_image', { expectedRevision, checklistId, todoId, sourcePath });
+  },
+  async deleteImage(expectedRevision: number, checklistId: string, todoId: string): Promise<MutationResult> {
+    return invoke('delete_todo_image', { expectedRevision, checklistId, todoId });
+  },
+  async loadImagePreview(todoId: string): Promise<string> {
+    return invoke('load_todo_image_preview', { todoId });
+  },
+  async checkForUpdate(expectedRevision: number): Promise<MutationResult> {
+    return invoke('check_for_update', { expectedRevision });
+  },
+  async installUpdate(): Promise<void> {
+    return invoke('download_and_install_update');
+  },
+  async stopReminder(expectedRevision: number, todoIds: string[]): Promise<MutationResult> {
+    return invoke('stop_reminder', { expectedRevision, todoIds });
+  },
+  async snoozeReminder(expectedRevision: number, todoIds: string[]): Promise<MutationResult> {
+    return invoke('snooze_reminder', { expectedRevision, todoIds });
   }
 };
 
@@ -335,7 +426,13 @@ export function applyMutation(snapshot: AppSnapshot, result: MutationResult): Ap
   if (delta.sortMode !== null) next.sortMode = delta.sortMode;
   if (delta.hideCompleted !== null) next.hideCompleted = delta.hideCompleted;
   if (delta.quickDelete !== null) next.quickDelete = delta.quickDelete;
+  if (delta.showDeadlineCountdown !== null) next.showDeadlineCountdown = delta.showDeadlineCountdown;
+  if (delta.checklistHistory !== null) next.checklistHistory = delta.checklistHistory;
   if (delta.settings !== null) next.settings = delta.settings;
+  if (delta.auth !== null) next.auth = delta.auth;
+  if (delta.sync !== null) next.sync = delta.sync;
+  if (delta.reminder !== null) next.reminder = delta.reminder;
+  if (delta.update !== null) next.update = delta.update;
   return next;
 }
 

@@ -49,11 +49,13 @@ pub struct TodoItem {
     pub due_at_millis: i64,
     pub completed: bool,
     pub created_at_millis: i64,
+    pub updated_at_millis: i64,
     pub reminder_repeat: ReminderRepeat,
     pub image_file_name: Option<String>,
     pub trashed_from_checklist_id: Option<String>,
     pub trashed_from_checklist_name: Option<String>,
     pub trashed_at_millis: Option<i64>,
+    pub remote_version: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -91,11 +93,13 @@ impl TodoItem {
             due_at_millis: draft.due_at_millis,
             completed: false,
             created_at_millis,
+            updated_at_millis: created_at_millis,
             reminder_repeat: draft.reminder_repeat,
             image_file_name: None,
             trashed_from_checklist_id: None,
             trashed_from_checklist_name: None,
             trashed_at_millis: None,
+            remote_version: None,
         })
     }
 
@@ -109,6 +113,7 @@ impl TodoItem {
         self.priority = draft.priority;
         self.due_at_millis = draft.due_at_millis;
         self.reminder_repeat = draft.reminder_repeat;
+        self.updated_at_millis = crate::domain::unix_now_millis();
         Ok(())
     }
 }
@@ -142,11 +147,13 @@ mod tests {
             due_at_millis: due,
             completed,
             created_at_millis: due,
+            updated_at_millis: due,
             reminder_repeat: ReminderRepeat::None,
             image_file_name: None,
             trashed_from_checklist_id: None,
             trashed_from_checklist_name: None,
             trashed_at_millis: None,
+            remote_version: None,
         }
     }
 

@@ -18,6 +18,8 @@ pub struct Checklist {
     pub kind: ChecklistKind,
     pub items: Vec<TodoItem>,
     pub created_at_millis: i64,
+    pub updated_at_millis: i64,
+    pub remote_version: Option<i64>,
 }
 
 impl Checklist {
@@ -28,6 +30,8 @@ impl Checklist {
             kind: ChecklistKind::Normal,
             items: Vec::new(),
             created_at_millis,
+            updated_at_millis: created_at_millis,
+            remote_version: None,
         }
     }
 
@@ -38,6 +42,8 @@ impl Checklist {
             kind,
             items: Vec::new(),
             created_at_millis,
+            updated_at_millis: created_at_millis,
+            remote_version: None,
         }
     }
 

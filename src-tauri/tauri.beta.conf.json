@@ -4,5 +4,13 @@
   "identifier": "com.milesxue.pixeldone.windows.beta",
   "app": {
     "windows": [{ "label": "main", "title": "PixelDone Beta" }]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Siyuan-Xue/PixelDone-windows/releases/download/beta/latest.json",
+        "https://gitee.com/milesxue/PixelDone-windows/releases/download/beta/latest.json"
+      ]
+    }
   }
 }

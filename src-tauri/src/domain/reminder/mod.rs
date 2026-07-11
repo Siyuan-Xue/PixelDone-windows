@@ -42,11 +42,13 @@ mod tests {
             due_at_millis: 100,
             completed: false,
             created_at_millis: 1,
+            updated_at_millis: 1,
             reminder_repeat: ReminderRepeat::Daily,
             image_file_name: None,
             trashed_from_checklist_id: None,
             trashed_from_checklist_name: None,
             trashed_at_millis: None,
+            remote_version: None,
         };
         assert_eq!(
             next_reminder_at(&item, 101),

@@ -4,6 +4,10 @@
   import '$lib/styles/base.css';
   import '$lib/styles/layout.css';
   import '$lib/styles/motion.css';
+
+  if (import.meta.env.MODE === 'e2e') {
+    void import('@wdio/tauri-plugin');
+  }
 </script>
 
 <PixelDoneApp />

@@ -7,6 +7,7 @@ export interface ParityRow {
   requiredForRelease: boolean;
   android: { source: string[]; tests: string[] };
   windows: { rustSource: string[]; uiEntry: string[]; tests: string[] };
+  evidence: { android: string[]; windows: string[] };
   status: ParityStatus;
   variance: string;
 }
@@ -18,7 +19,7 @@ export interface ParityManifest {
 }
 
 export async function loadManifest(): Promise<ParityManifest> {
-  const file = Bun.file(new URL('../parity/pixeldone-3.0.3.yaml', import.meta.url));
+  const file = Bun.file(new URL('../parity/pixeldone-3.1.0.yaml', import.meta.url));
   return JSON.parse(await file.text()) as ParityManifest;
 }
 

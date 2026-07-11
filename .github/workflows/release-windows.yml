@@ -39,18 +39,20 @@ jobs:
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
         run: |
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Missing Tauri updater signing key' }
-          if (-not $env:WINDOWS_SIGN_COMMAND) { throw 'Missing Authenticode/Azure Artifact Signing command' }
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          PIXELDONE_SUPABASE_URL: ${{ secrets.PIXELDONE_SUPABASE_URL }}
+          PIXELDONE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PIXELDONE_SUPABASE_PUBLISHABLE_KEY }}
+          PIXELDONE_REQUIRE_CLOUD_CONFIG: true
+          PIXELDONE_ALLOW_INSECURE_HTTP: true
         with:
           tagName: v__VERSION__
           releaseName: PixelDone v__VERSION__
-          releaseDraft: true
-          prerelease: true
+          releaseDraft: false
+          prerelease: false
           args: --bundles nsis --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json

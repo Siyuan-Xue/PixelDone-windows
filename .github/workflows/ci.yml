@@ -25,6 +25,16 @@ jobs:
         with:
           workspaces: src-tauri
       - run: bun install --frozen-lockfile
+      - name: Export required cloud build configuration
+        shell: pwsh
+        env:
+          PIXELDONE_SUPABASE_URL: ${{ secrets.PIXELDONE_SUPABASE_URL }}
+          PIXELDONE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PIXELDONE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if (-not $env:PIXELDONE_SUPABASE_URL) { throw 'Missing PIXELDONE_SUPABASE_URL' }
+          if (-not $env:PIXELDONE_SUPABASE_PUBLISHABLE_KEY) { throw 'Missing PIXELDONE_SUPABASE_PUBLISHABLE_KEY' }
+          "PIXELDONE_REQUIRE_CLOUD_CONFIG=true" >> $env:GITHUB_ENV
+          "PIXELDONE_ALLOW_INSECURE_HTTP=true" >> $env:GITHUB_ENV
       - run: bun run check
       - run: bun run test
       - run: bun run build
@@ -34,4 +44,4 @@ jobs:
         working-directory: src-tauri
       - run: cargo test
         working-directory: src-tauri
-      - run: bun run parity:report
+      - run: bun run parity:check

@@ -13,9 +13,15 @@ for (const row of manifest.rows) {
   if (row.status === 'verified') {
     if (!row.windows.rustSource.length && !row.windows.uiEntry.length) failures.push(`${row.id}: missing Windows implementation evidence`);
     if (!row.windows.tests.length) failures.push(`${row.id}: missing Windows test evidence`);
+    if (!row.evidence.android.length) failures.push(`${row.id}: missing Android release evidence`);
+    if (!row.evidence.windows.length) failures.push(`${row.id}: missing Windows release evidence`);
     for (const path of [...row.windows.rustSource, ...row.windows.uiEntry]) {
       const filePath = path.split('#')[0];
       if (!existsSync(`${root}/${filePath}`)) failures.push(`${row.id}: evidence file not found ${filePath}`);
+    }
+    for (const path of [...row.windows.tests, ...row.evidence.android, ...row.evidence.windows]) {
+      const filePath = path.split('#')[0];
+      if (!existsSync(`${root}/${filePath}`)) failures.push(`${row.id}: test/evidence file not found ${filePath}`);
     }
   }
 }

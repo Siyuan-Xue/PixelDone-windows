@@ -7,7 +7,7 @@ const rows = manifest.rows
   .join('\n');
 const markdown = `# PixelDone Windows 功能复刻报告
 
-> 本文件由 \`bun run parity:report\` 从 \`parity/pixeldone-3.0.3.yaml\` 生成，请勿手工维护状态。
+> 本文件由 \`bun run parity:report\` 从 \`parity/pixeldone-3.1.0.yaml\` 生成，请勿手工维护状态。
 
 基线：PixelDone Android ${manifest.baseline.version}（versionCode ${manifest.baseline.versionCode}，commit \`${manifest.baseline.commit}\`，Room v${manifest.baseline.roomSchema}）。
 
@@ -22,7 +22,7 @@ const markdown = `# PixelDone Windows 功能复刻报告
 | --- | --- | --- | --- | --- | --- |
 ${rows}
 
-正式发布门槛固定为 100.00%、0 blocked、0 in_progress、0 not_started、0 missing evidence。
+正式发布门槛固定为 100.00%、0 blocked、0 in_progress、0 not_started、0 missing evidence。非 required 项只允许用于记录双方明确排除的源码能力。
 `;
 await Bun.write(new URL('../docs/parity.md', import.meta.url), markdown);
 console.log(`Generated docs/parity.md (${summary.percent.toFixed(2)}%)`);

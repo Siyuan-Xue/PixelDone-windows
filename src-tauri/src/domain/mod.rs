@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 pub use checklist::{Checklist, ChecklistKind};
 pub use dock::{DockAction, DockConfig, DockPlusPlacement};
 pub use error::AppError;
+pub use sync::{
+    AppLanguage, AuthView, ConflictResolutionChoice, ReminderRunView, SyncConflictView,
+    SyncRunView, SyncState, UpdateView,
+};
 pub use todo::{ReminderRepeat, SortMode, TodoItem, TodoPriority};
 
 pub const DEFAULT_CHECKLIST_ID: &str = "main";
@@ -26,6 +30,7 @@ pub struct AppSettings {
     pub dock: DockConfig,
     pub never_show_update_dialog: bool,
     pub future_sync_enabled: bool,
+    pub language_mode: AppLanguage,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,7 +42,13 @@ pub struct AppSnapshot {
     pub sort_mode: SortMode,
     pub hide_completed: bool,
     pub quick_delete: bool,
+    pub show_deadline_countdown: bool,
+    pub checklist_history: Vec<String>,
     pub settings: AppSettings,
+    pub auth: AuthView,
+    pub sync: SyncRunView,
+    pub reminder: ReminderRunView,
+    pub update: UpdateView,
 }
 
 impl AppSnapshot {
@@ -67,7 +78,28 @@ impl AppSnapshot {
             sort_mode: SortMode::Priority,
             hide_completed: false,
             quick_delete: false,
+            show_deadline_countdown: false,
+            checklist_history: Vec::new(),
             settings: AppSettings::default(),
+            auth: AuthView {
+                cloud_available: true,
+                insecure_http: true,
+                ..AuthView::default()
+            },
+            sync: SyncRunView {
+                state: SyncState::SignedOut,
+                insecure_http: true,
+                ..SyncRunView::default()
+            },
+            reminder: ReminderRunView {
+                state: "IDLE".to_owned(),
+                ..ReminderRunView::default()
+            },
+            update: UpdateView {
+                state: "IDLE".to_owned(),
+                current_version: env!("CARGO_PKG_VERSION").to_owned(),
+                ..UpdateView::default()
+            },
         }
     }
 
@@ -159,7 +191,13 @@ pub struct SnapshotDelta {
     pub sort_mode: Option<SortMode>,
     pub hide_completed: Option<bool>,
     pub quick_delete: Option<bool>,
+    pub show_deadline_countdown: Option<bool>,
+    pub checklist_history: Option<Vec<String>>,
     pub settings: Option<AppSettings>,
+    pub auth: Option<AuthView>,
+    pub sync: Option<SyncRunView>,
+    pub reminder: Option<ReminderRunView>,
+    pub update: Option<UpdateView>,
 }
 
 impl SnapshotDelta {
@@ -186,7 +224,16 @@ impl SnapshotDelta {
             hide_completed: (before.hide_completed != after.hide_completed)
                 .then_some(after.hide_completed),
             quick_delete: (before.quick_delete != after.quick_delete).then_some(after.quick_delete),
+            show_deadline_countdown: (before.show_deadline_countdown
+                != after.show_deadline_countdown)
+                .then_some(after.show_deadline_countdown),
+            checklist_history: (before.checklist_history != after.checklist_history)
+                .then(|| after.checklist_history.clone()),
             settings: (before.settings != after.settings).then(|| after.settings.clone()),
+            auth: (before.auth != after.auth).then(|| after.auth.clone()),
+            sync: (before.sync != after.sync).then(|| after.sync.clone()),
+            reminder: (before.reminder != after.reminder).then(|| after.reminder.clone()),
+            update: (before.update != after.update).then(|| after.update.clone()),
         }
     }
 }

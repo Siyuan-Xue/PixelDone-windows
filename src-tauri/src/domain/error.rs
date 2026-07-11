@@ -11,6 +11,14 @@ pub enum AppError {
     NotFound(String),
     #[error("数据库操作失败：{0}")]
     Database(String),
+    #[error("网络请求失败：{0}")]
+    Network(String),
+    #[error("账号操作失败：{0}")]
+    Auth(String),
+    #[error("Windows 系统操作失败：{0}")]
+    Platform(String),
+    #[error("更新操作失败：{0}")]
+    Update(String),
     #[error("应用初始化失败：{0}")]
     Initialization(String),
 }
@@ -22,6 +30,10 @@ impl AppError {
             Self::Validation(_) => "VALIDATION_ERROR",
             Self::NotFound(_) => "NOT_FOUND",
             Self::Database(_) => "DATABASE_ERROR",
+            Self::Network(_) => "NETWORK_ERROR",
+            Self::Auth(_) => "AUTH_ERROR",
+            Self::Platform(_) => "PLATFORM_ERROR",
+            Self::Update(_) => "UPDATE_ERROR",
             Self::Initialization(_) => "INITIALIZATION_ERROR",
         }
     }
@@ -48,5 +60,11 @@ impl From<sqlx::Error> for AppError {
 impl From<std::io::Error> for AppError {
     fn from(value: std::io::Error) -> Self {
         Self::Initialization(value.to_string())
+    }
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::Network(value.to_string())
     }
 }

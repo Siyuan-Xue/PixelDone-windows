@@ -1,10 +1,23 @@
 [package]
 name = "pixeldone-windows"
-version = "3.1.0-rc.1"
+version = "3.1.0"
 description = "Rust-first Windows client for PixelDone"
 authors = ["CODEX & XUE"]
 edition = "2024"
 default-run = "pixeldone-windows"
+autobins = false
+
+[features]
+bindings = []
+
+[[bin]]
+name = "pixeldone-windows"
+path = "src/main.rs"
+
+[[bin]]
+name = "export_bindings"
+path = "src/bin/export_bindings.rs"
+required-features = ["bindings"]
 
 [lib]
 name = "pixeldone_windows_lib"
@@ -14,11 +27,32 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2.5"
+tauri-plugin-dialog = "2.7"
 tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2.4"
+tauri-plugin-updater = "2.10"
+tauri-plugin-wdio = "1.2"
+tauri-plugin-wdio-webdriver = "1.2"
 thiserror = "2"
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["macros", "sync", "time"] }
+url = "2"
 uuid = { version = "1", features = ["v4"] }
+windows = { version = "0.62", features = [
+  "Data_Xml_Dom",
+  "Foundation",
+  "UI_Notifications",
+  "Win32_Foundation",
+  "Win32_Security_Credentials"
+] }
+
+[dev-dependencies]
+minisign-verify = "0.2.5"

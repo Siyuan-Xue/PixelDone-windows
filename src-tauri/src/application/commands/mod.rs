@@ -11,7 +11,13 @@ use crate::{
     },
 };
 
-async fn mutate<F>(
+pub mod auth;
+pub mod image;
+pub mod reminder;
+pub mod sync;
+pub mod update;
+
+pub(super) async fn mutate<F>(
     state: State<'_, ManagedAppState>,
     expected_revision: i64,
     operation: F,
@@ -28,9 +34,13 @@ where
     let mut candidate = before.clone();
     let changed_ids = operation(&mut candidate)?;
     candidate.revision += 1;
-    runtime.repository.save_snapshot(&candidate).await?;
+    runtime
+        .repository
+        .save_snapshot_with_changes(&before, &candidate)
+        .await?;
     let snapshot_delta = SnapshotDelta::between(&before, &candidate);
     runtime.snapshot = candidate;
+    state.sync_notify.notify_one();
 
     Ok(MutationResult {
         revision: runtime.snapshot.revision,
@@ -58,8 +68,36 @@ pub async fn select_checklist(
         {
             return Err(AppError::NotFound(format!("checklist {checklist_id}")));
         }
+        let previous = snapshot.selected_checklist_id.clone();
         snapshot.selected_checklist_id = checklist_id.clone();
+        if previous != checklist_id {
+            snapshot.checklist_history.push(previous);
+            if snapshot.checklist_history.len() > 50 {
+                snapshot.checklist_history.remove(0);
+            }
+        }
         Ok(vec![checklist_id])
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn back_checklist(
+    state: State<'_, ManagedAppState>,
+    expected_revision: i64,
+) -> Result<MutationResult, AppError> {
+    mutate(state, expected_revision, |snapshot| {
+        while let Some(checklist_id) = snapshot.checklist_history.pop() {
+            if snapshot
+                .checklists
+                .iter()
+                .any(|list| list.id == checklist_id)
+            {
+                snapshot.selected_checklist_id = checklist_id.clone();
+                return Ok(vec![checklist_id]);
+            }
+        }
+        Err(AppError::Validation("没有可返回的清单".to_owned()))
     })
     .await
 }
@@ -102,6 +140,7 @@ pub async fn rename_checklist(
             return Err(AppError::Validation("特殊清单不能重命名".to_owned()));
         }
         checklist.name = name;
+        checklist.updated_at_millis = unix_now_millis();
         Ok(vec![checklist_id])
     })
     .await
@@ -130,6 +169,7 @@ pub async fn delete_checklist(
             item.trashed_from_checklist_id = Some(source.id.clone());
             item.trashed_from_checklist_name = Some(source_name.clone());
             item.trashed_at_millis = Some(now);
+            item.updated_at_millis = now;
             trash.items.push(item);
         }
         if snapshot.selected_checklist_id == checklist_id {
@@ -202,6 +242,7 @@ pub async fn toggle_todo(
             .find(|item| item.id == todo_id)
             .ok_or_else(|| AppError::NotFound(format!("todo {todo_id}")))?;
         item.completed = !item.completed;
+        item.updated_at_millis = unix_now_millis();
         Ok(vec![checklist_id, todo_id])
     })
     .await
@@ -230,7 +271,9 @@ pub async fn move_todo_to_trash(
         let mut item = snapshot.checklists[source_index].items.remove(todo_index);
         item.trashed_from_checklist_id = Some(source_id);
         item.trashed_from_checklist_name = Some(source_name);
-        item.trashed_at_millis = Some(unix_now_millis());
+        let now = unix_now_millis();
+        item.trashed_at_millis = Some(now);
+        item.updated_at_millis = now;
         snapshot.checklist_mut(TRASH_CHECKLIST_ID)?.items.push(item);
         Ok(vec![checklist_id, TRASH_CHECKLIST_ID.to_owned(), todo_id])
     })
@@ -257,7 +300,9 @@ pub async fn clean_completed(
             if item.completed {
                 item.trashed_from_checklist_id = Some(source_id.clone());
                 item.trashed_from_checklist_name = Some(source_name.clone());
-                item.trashed_at_millis = Some(unix_now_millis());
+                let now = unix_now_millis();
+                item.trashed_at_millis = Some(now);
+                item.updated_at_millis = now;
                 moved.push(item);
             } else {
                 retained.push(item);
@@ -329,6 +374,7 @@ pub async fn restore_todo(
         item.trashed_from_checklist_id = None;
         item.trashed_from_checklist_name = None;
         item.trashed_at_millis = None;
+        item.updated_at_millis = unix_now_millis();
         snapshot.checklist_mut(&target_id)?.items.push(item);
         Ok(vec![TRASH_CHECKLIST_ID.to_owned(), target_id, todo_id])
     })
@@ -349,6 +395,24 @@ pub async fn purge_todo(
             return Err(AppError::NotFound(format!("todo {todo_id}")));
         }
         Ok(vec![TRASH_CHECKLIST_ID.to_owned(), todo_id])
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn purge_all_trash(
+    state: State<'_, ManagedAppState>,
+    expected_revision: i64,
+) -> Result<MutationResult, AppError> {
+    mutate(state, expected_revision, |snapshot| {
+        let trash = snapshot.checklist_mut(TRASH_CHECKLIST_ID)?;
+        if trash.items.is_empty() {
+            return Err(AppError::Validation("回收站已经为空".to_owned()));
+        }
+        let mut changed = vec![TRASH_CHECKLIST_ID.to_owned()];
+        changed.extend(trash.items.iter().map(|item| item.id.clone()));
+        trash.items.clear();
+        Ok(changed)
     })
     .await
 }
@@ -388,6 +452,19 @@ pub async fn set_quick_delete(
     mutate(state, expected_revision, |snapshot| {
         snapshot.quick_delete = quick_delete;
         Ok(vec!["quick-delete".to_owned()])
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_deadline_countdown(
+    state: State<'_, ManagedAppState>,
+    expected_revision: i64,
+    visible: bool,
+) -> Result<MutationResult, AppError> {
+    mutate(state, expected_revision, |snapshot| {
+        snapshot.show_deadline_countdown = visible;
+        Ok(vec!["deadline-countdown".to_owned()])
     })
     .await
 }

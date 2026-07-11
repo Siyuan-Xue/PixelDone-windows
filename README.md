@@ -1,49 +1,48 @@
 # PixelDone Windows
 
-PixelDone Android 的 Rust-first Windows 客户端。桌面布局借鉴 macOS Reminders 的信息架构，但功能、视觉语言和行为语义以 PixelDone Android 为唯一产品权威。
+PixelDone Android 3.1.0 的 Rust-first Windows 客户端。功能与领域语义以 Android 为权威，桌面端保留 PixelDone 视觉语言，并采用适合键鼠操作的 Sidebar、Task Workspace、Inspector 三栏布局。
 
-## 当前基线
+## 正式版基线
 
-- Android：PixelDone 3.0.3，commit `89763b6`，Room v4
-- Rust：1.96.1 stable，Edition 2024
-- Desktop：Tauri 2，Svelte 5.56.4，TypeScript 6.0.2，Bun 1.3.14
-- 平台：Windows 11 24H2+，仅发布 x64 NSIS
-- Release：`parity/pixeldone-3.0.3.yaml` 中所有 required 功能达到 100% verified 后才允许创建
+- Android：PixelDone 3.1.0，commit `63471218345f6a4efcdbbd32c2d4c42acb25491c`，Room v5。
+- Windows：Rust 1.96.1 / Edition 2024、Tauri 2、Svelte 5.56.4、TypeScript 6.0.2、Bun 1.3.14。
+- 支持范围：Windows 11 24H2+，仅发布 x64 NSIS 安装包。
+- 本地数据：`%LOCALAPPDATA%\com.milesxue.pixeldone.windows\data\pixeldone.sqlite3`；图片仅保存在本机 `attachments` 目录。
+- 云端：Android 与 Windows 共用同一 Supabase Auth、业务表和 3.1 同步协议。
 
-## 开发
+## 安装与运行
+
+运行 `PixelDone_3.1.0_x64-setup.exe` 完成当前用户安装，然后可直接点击桌面/开始菜单中的 PixelDone，或直接点击安装目录内的 `pixeldone-windows.exe`。
+
+本项目的小范围正式分发不使用 Authenticode。Windows SmartScreen 可能在首次启动时显示“未知发布者”，用户确认来源和 SHA-256 后可选择“仍要运行”。安装包仍使用 Tauri updater signature 校验应用内更新。
+
+## 明文 HTTP 决策
+
+PixelDone 3.1 长期允许连接指定的 HTTP Supabase endpoint，Android 与 Windows 均没有迁移 HTTPS 的计划。HTTP 不提供 HTTPS 的链路机密性、完整性和服务器身份保护；同一网络路径上的第三方可能观察或篡改账号及同步流量。此风险是当前小范围部署的明确产品决策。
+
+## 开发与验证
 
 ```powershell
 bun install
 bun run check
 bun run test
 bun run build
-bun tauri dev
-```
+bun run e2e
+bun run parity:check
 
-Rust 后端独立验证：
-
-```powershell
 cd src-tauri
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-Parity 报告：
+`build.rs` 优先读取构建环境变量；本地开发可安全复用相邻 Android 仓库 `PixelDone/local.properties` 中的 `pixeldone.supabaseUrl` 和 `pixeldone.supabasePublishableKey`。脚本不会打印密钥，`local.properties` 和 updater 私钥均不会进入 Git。
+
+正式构建：
 
 ```powershell
-bun run parity:report
-bun run parity:check
+$env:TAURI_SIGNING_PRIVATE_KEY_PATH = 'src-tauri/signing/pixeldone-updater.key'
+bun tauri build --bundles nsis --target x86_64-pc-windows-msvc
 ```
 
-`parity:check` 在功能未完全验证时故意返回非零状态；这是 Release 阻断器，不是开发期应绕过的检查。
-
-## 目录边界
-
-- 根目录由 Bun 管理 Svelte/Vite 前端与开发脚本。
-- `src-tauri/` 是 Cargo 管理的标准 Rust/Tauri crate。
-- Rust 独占领域规则、SQLite、同步、提醒、凭据和 Windows 系统能力。
-- Svelte 只管理草稿、焦点、选中项、菜单和动画等临时 UI 状态。
-- 不存在独立 Node 后端、前端 SQLite 或第二个 Git 仓库。
-
-TypeScript 直接固定为 6.0.2。Microsoft 的 `@typescript/typescript6` compatibility alias 在 Bun 1.3.14 中会将其嵌套 `@typescript/old` 错误解析为自身，导致 `svelte-check` 获得空 API；直接固定得到的正是 wrapper 要 re-export 的同一套稳定 API。
+正式 Release 必须通过 `parity/pixeldone-3.1.0.yaml` 的 100% required gate。Supabase Storage 图片同步和 Android UI 不可达的 batch move 是明确排除项，不计为功能缺失。

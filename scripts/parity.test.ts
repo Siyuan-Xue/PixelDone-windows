@@ -2,11 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { loadManifest, summarize } from './parity';
 
 describe('parity manifest', () => {
-  test('pins Android 3.0.3 commit and counts required rows', async () => {
+  test('pins the final Android 3.1.0 commit and counts atomic required rows', async () => {
     const manifest = await loadManifest();
-    expect(manifest.baseline.version).toBe('3.0.3');
-    expect(manifest.baseline.commit.startsWith('89763b6')).toBeTrue();
-    expect(summarize(manifest).required).toBeGreaterThan(20);
+    expect(manifest.baseline.version).toBe('3.1.0');
+    expect(manifest.baseline.commit).toBe('63471218345f6a4efcdbbd32c2d4c42acb25491c');
+    expect(manifest.baseline.roomSchema).toBe(5);
+    expect(summarize(manifest).required).toBeGreaterThan(35);
   });
 
   test('records source-only batch move as excluded', async () => {

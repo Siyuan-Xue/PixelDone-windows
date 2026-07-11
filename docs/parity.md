@@ -1,51 +1,60 @@
 # PixelDone Windows 功能复刻报告
 
-> 本文件由 `bun run parity:report` 从 `parity/pixeldone-3.0.3.yaml` 生成，请勿手工维护状态。
+> 本文件由 `bun run parity:report` 从 `parity/pixeldone-3.1.0.yaml` 生成，请勿手工维护状态。
 
-基线：PixelDone Android 3.0.3（versionCode 76，commit `89763b6ac3b8f5bea8760c4e48d2cbf3d02591f7`，Room v4）。
+基线：PixelDone Android 3.1.0（versionCode 78，commit `63471218345f6a4efcdbbd32c2d4c42acb25491c`，Room v5）。
 
-- Required：33
-- Verified：0
-- In progress：18
-- Blocked：14
-- Not started：1
-- 完成率：0.00%
+- Required：41
+- Verified：41
+- In progress：0
+- Blocked：0
+- Not started：0
+- 完成率：100.00%
 
 | ID | 域 | 功能 | Release required | 状态 | 差异 |
 | --- | --- | --- | --- | --- | --- |
-| LIST-FIXED-001 | checklist | MAIN/TRASH/SETTINGS 固定页面 | 是 | in_progress | none |
-| LIST-CRUD-001 | checklist | 普通清单创建、重命名、删除 | 是 | in_progress | none |
-| LIST-MINIMUM-001 | checklist | 至少保留一个普通清单 | 是 | in_progress | none |
-| LIST-HISTORY-001 | checklist | 清单返回历史 | 是 | not_started | platform-equivalent: Alt+Left / Back |
-| TODO-CRUD-001 | todo | 任务创建、编辑、软删除 | 是 | in_progress | none |
-| TODO-PRIORITY-001 | todo | XHIGH/HIGH/MEDIUM/LOW 四级优先级 | 是 | in_progress | none |
-| TODO-DUE-001 | todo | 截止日期和时间 | 是 | in_progress | none |
-| TODO-REPEAT-001 | todo | NONE/DAILY/WEEKLY 重复提醒 | 是 | in_progress | none |
-| TODO-SORT-001 | todo | 优先级与时间排序 | 是 | in_progress | none |
-| TODO-COMPLETE-001 | todo | 完成与重新激活 | 是 | in_progress | none |
-| TODO-DELAY-001 | todo | 完成后两秒延迟排序与高亮 | 是 | in_progress | none |
-| TODO-COMPACT-001 | todo | 紧凑完成行 | 是 | in_progress | none |
-| DOCK-HIDE-001 | dock | HIDE DONE | 是 | in_progress | none |
-| DOCK-CLEAN-001 | dock | CLEAN DONE | 是 | in_progress | none |
-| DOCK-QUICK-001 | dock | QUICK DELETE | 是 | in_progress | none |
-| TRASH-RESTORE-001 | trash | 恢复任务并重建原清单 | 是 | in_progress | none |
-| TRASH-PURGE-001 | trash | 永久删除与 tombstone | 是 | in_progress | none |
-| IMAGE-SINGLE-001 | image | 单张图片添加、预览、替换与删除 | 是 | blocked | none |
-| IMAGE-CLOUD-001 | image | Supabase Storage 跨端图片同步 | 是 | blocked | none |
-| REMINDER-NORMAL-001 | reminder | 普通短通知提醒 | 是 | blocked | platform-equivalent: Windows notification |
-| REMINDER-XHIGH-001 | reminder | XHIGH 独立强提醒窗口 | 是 | blocked | platform-equivalent: XHIGH alarm window |
-| REMINDER-BATCH-001 | reminder | 同时间提醒批处理、STOP 与 SNOOZE | 是 | blocked | none |
-| REMINDER-RECONCILE-001 | reminder | 开机、恢复、时间变化后的提醒校正 | 是 | blocked | platform-equivalent: autostart + reconciliation |
-| SETTINGS-THEME-001 | settings | 浅色与深色主题 | 是 | in_progress | none |
-| SETTINGS-DOCK-001 | settings | Dock 位置与最多四动作配置 | 是 | in_progress | none |
-| AUTH-001 | auth | 注册、登录、退出与密码重置 | 是 | blocked | none |
-| CREDENTIAL-001 | auth | 凭据安全存储 | 是 | blocked | platform-equivalent: Credential Manager |
-| SYNC-MANUAL-001 | sync | 手动与自动同步 | 是 | blocked | none |
-| SYNC-CAS-001 | sync | 原子 mutation、CAS、change feed 与 schema negotiation | 是 | blocked | none |
-| SYNC-CONFLICT-001 | sync | 冲突记录与 LOCAL/CLOUD 审查 | 是 | blocked | none |
-| UPDATE-SOURCE-001 | update | GitHub 优先与 Gitee 回退 | 是 | blocked | none |
-| UPDATE-CHANNEL-001 | update | stable 与 beta/RC 独立渠道 | 是 | blocked | none |
-| RELEASE-NSIS-001 | release | Windows x64 NSIS 安装与双签名 | 是 | blocked | platform-equivalent: signed NSIS/Tauri updater |
+| LIST-FIXED-001 | checklist | MAIN、TRASH、SETTINGS 固定页面 | 是 | verified | none |
+| LIST-CRUD-001 | checklist | 普通清单创建、重命名与删除 | 是 | verified | none |
+| LIST-MINIMUM-001 | checklist | 至少保留一个普通清单 | 是 | verified | none |
+| LIST-HISTORY-001 | checklist | 清单返回历史 | 是 | verified | platform-equivalent: Esc / Alt+Left |
+| TODO-CRUD-001 | todo | 任务创建、编辑与软删除 | 是 | verified | none |
+| TODO-FIELDS-001 | todo | 标题、完成、创建时间、回收站来源和远端版本字段 | 是 | verified | none |
+| TODO-PRIORITY-001 | todo | XHIGH、HIGH、MEDIUM、LOW 四级优先级 | 是 | verified | none |
+| TODO-DUE-001 | todo | 截止日期和时间 | 是 | verified | none |
+| TODO-REPEAT-001 | todo | NONE、DAILY、WEEKLY 重复提醒 | 是 | verified | none |
+| TODO-SORT-001 | todo | 优先级与时间排序 | 是 | verified | none |
+| TODO-DDL-001 | todo | DDL 截止时间显示开关 | 是 | verified | none |
+| TODO-COMPLETE-001 | todo | 完成与重新激活 | 是 | verified | none |
+| TODO-DELAY-001 | todo | 完成后两秒延迟排序 | 是 | verified | none |
+| TODO-HIGHLIGHT-001 | todo | 任务 reveal 与状态高亮 | 是 | verified | none |
+| TODO-COMPACT-001 | todo | 紧凑完成行 | 是 | verified | none |
+| DOCK-HIDE-001 | dock | HIDE DONE | 是 | verified | none |
+| DOCK-CLEAN-001 | dock | CLEAN DONE | 是 | verified | none |
+| DOCK-QUICK-001 | dock | QUICK DELETE | 是 | verified | none |
+| TRASH-RESTORE-001 | trash | 恢复任务并重建来源清单 | 是 | verified | none |
+| TRASH-PURGE-001 | trash | 永久删除和 tombstone | 是 | verified | none |
+| IMAGE-LOCAL-001 | image | 单张本地图片添加、预览、替换、删除、缩放和平移 | 是 | verified | none |
+| REMINDER-NORMAL-001 | reminder | 普通 Windows 通知提醒 | 是 | verified | platform-equivalent: Windows toast |
+| REMINDER-XHIGH-001 | reminder | XHIGH 独立强提醒窗口 | 是 | verified | platform-equivalent: always-on-top alarm window |
+| REMINDER-BATCH-001 | reminder | 同时间批处理、STOP 与 SNOOZE | 是 | verified | none |
+| REMINDER-RECONCILE-001 | reminder | 开机、睡眠恢复和系统时间变化校正 | 是 | verified | platform-equivalent: autostart plus periodic reconciliation |
+| SETTINGS-THEME-001 | settings | 浅色与深色主题 | 是 | verified | none |
+| SETTINGS-DOCK-001 | settings | Dock 位置与最多四动作配置 | 是 | verified | none |
+| SETTINGS-LANGUAGE-001 | settings | 七项语言两列排列、原生名称与 RTL | 是 | verified | none |
+| SETTINGS-CLOUD-ICONS-001 | settings | 登录、镜像登出与同步图标几何 | 是 | verified | none |
+| AUTH-001 | auth | 注册、登录、退出与密码重置 | 是 | verified | none |
+| CREDENTIAL-001 | auth | 凭据安全存储 | 是 | verified | platform-equivalent: Windows Credential Manager |
+| SYNC-MANUAL-001 | sync | 手动与自动同步 | 是 | verified | platform-equivalent: mutation-triggered debounce plus 30-second recovery polling |
+| SYNC-CAS-001 | sync | 原子 mutation、CAS、change feed 与 schema negotiation | 是 | verified | none |
+| SYNC-CONFLICT-001 | sync | 冲突记录、字段差异与 LOCAL/CLOUD 审查 | 是 | verified | none |
+| SYNC-IMAGE-LOCAL-001 | sync | 两端图片严格本地且不影响其他字段同步 | 是 | verified | intentional shared exclusion: no Supabase Storage |
+| SYNC-HTTP-001 | sync | 指定 Supabase endpoint 的长期 HTTP 正式策略 | 是 | verified | accepted insecure transport risk; no HTTPS migration |
+| UPDATE-SOURCE-001 | update | GitHub 优先与 Gitee 回退 | 是 | verified | none |
+| UPDATE-CHANNEL-001 | update | stable 与 beta/RC 独立应用标识和清单 | 是 | verified | none |
+| WINDOWS-TRAY-001 | platform | 托盘常驻、关闭隐藏、单实例与开机启动 | 是 | verified | platform-equivalent: Windows tray/autostart/single-instance |
+| DATABASE-PATH-001 | storage | 官方 LocalAppData 分目录、SQLite 重启恢复与卸载保留 | 是 | verified | platform-equivalent local databases; no shared SQLite file |
+| RELEASE-NSIS-001 | release | Windows x64 NSIS、SHA-256 与 Tauri updater signature | 是 | verified | platform-equivalent: unsigned-publisher NSIS plus signed updater; SmartScreen accepted |
+| IMAGE-CLOUD-EXCLUDED | excluded | Supabase Storage 图片同步 | 否 | not_started | excluded_by_product_decision |
 | SOURCE-BATCH-MOVE-001 | excluded | 源码存在但 Android UI 不可达的批量移动 | 否 | not_started | excluded_source_only |
 
-正式发布门槛固定为 100.00%、0 blocked、0 in_progress、0 not_started、0 missing evidence。
+正式发布门槛固定为 100.00%、0 blocked、0 in_progress、0 not_started、0 missing evidence。非 required 项只允许用于记录双方明确排除的源码能力。

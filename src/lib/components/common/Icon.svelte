@@ -1,13 +1,14 @@
 <script lang="ts">
-  type IconName = 'list' | 'trash' | 'settings' | 'plus' | 'back' | 'more' | 'close' | 'cloud' | 'check';
+  type IconName = 'list' | 'trash' | 'settings' | 'plus' | 'back' | 'more' | 'close' | 'cloud' | 'check' | 'login' | 'logout' | 'sync' | 'image';
   let { name, size = 16 }: { name: IconName; size?: number } = $props();
+  let cloudAction = $derived(name === 'login' || name === 'logout' || name === 'sync');
 </script>
 
 <svg
   class="pixel-icon"
   width={size}
   height={size}
-  viewBox="0 0 16 16"
+  viewBox={cloudAction ? '0 0 22 22' : '0 0 16 16'}
   fill="none"
   stroke="currentColor"
   stroke-width="1.5"
@@ -37,5 +38,13 @@
     <path d="M4 12h8a3 3 0 0 0 .4-6A4.5 4.5 0 0 0 4 6.5 2.8 2.8 0 0 0 4 12Z"></path>
   {:else if name === 'check'}
     <path d="m3 8 3 3 7-7"></path>
+  {:else if name === 'login'}
+    <path d="M11 3H19V19H11M3 11H16M11 6 16 11 11 16"></path>
+  {:else if name === 'logout'}
+    <g transform="translate(22 0) scale(-1 1)"><path d="M11 3H19V19H11M3 11H16M11 6 16 11 11 16"></path></g>
+  {:else if name === 'sync'}
+    <path d="M18 12C18 7 15 4 11 4M11 1 7 5l4 4M4 10c0 5 3 8 7 8M11 13l4 4-4 4"></path>
+  {:else if name === 'image'}
+    <rect x="2" y="3" width="12" height="10"></rect><path d="m3 11 3-3 2 2 2-3 3 4M5 6h.01"></path>
   {/if}
 </svg>

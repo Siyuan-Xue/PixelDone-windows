@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS sync_mutations (
 
 CREATE TABLE IF NOT EXISTS sync_conflicts (
     owner_user_id TEXT NOT NULL,
-    record_type TEXT NOT NULL CHECK (record_type IN ('checklist', 'item', 'attachment')),
+    record_type TEXT NOT NULL CHECK (record_type IN ('checklist', 'item', 'settings')),
     local_id TEXT NOT NULL,
     local_payload_json TEXT NOT NULL,
     remote_payload_json TEXT NOT NULL,
@@ -28,9 +28,17 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
     PRIMARY KEY (owner_user_id, record_type, local_id)
 );
 
-CREATE TABLE IF NOT EXISTS checklist_tombstones (
-    checklist_id TEXT PRIMARY KEY NOT NULL,
+CREATE TABLE IF NOT EXISTS sync_tombstones (
+    record_type TEXT NOT NULL CHECK (record_type IN ('checklist', 'item')),
+    local_id TEXT NOT NULL,
     owner_user_id TEXT,
     deleted_at_millis INTEGER NOT NULL,
-    remote_version INTEGER
+    remote_version INTEGER,
+    PRIMARY KEY (record_type, local_id)
+);
+
+CREATE TABLE IF NOT EXISTS sync_dirty_records (
+    record_type TEXT NOT NULL CHECK (record_type IN ('checklist', 'item', 'settings')),
+    local_id TEXT NOT NULL,
+    PRIMARY KEY (record_type, local_id)
 );

@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS app_metadata (
     revision INTEGER NOT NULL DEFAULT 0,
     sort_mode TEXT NOT NULL CHECK (sort_mode IN ('PRIORITY', 'TIME')),
     hide_completed INTEGER NOT NULL DEFAULT 0 CHECK (hide_completed IN (0, 1)),
-    quick_delete INTEGER NOT NULL DEFAULT 0 CHECK (quick_delete IN (0, 1))
+    quick_delete INTEGER NOT NULL DEFAULT 0 CHECK (quick_delete IN (0, 1)),
+    show_deadline_countdown INTEGER NOT NULL DEFAULT 0 CHECK (show_deadline_countdown IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS checklists (
@@ -14,6 +15,8 @@ CREATE TABLE IF NOT EXISTS checklists (
     name TEXT NOT NULL CHECK (length(trim(name)) > 0),
     sort_index INTEGER NOT NULL,
     created_at_millis INTEGER NOT NULL,
+    updated_at_millis INTEGER NOT NULL,
+    remote_version INTEGER,
     deleted_at_millis INTEGER
 );
 
@@ -26,6 +29,8 @@ CREATE TABLE IF NOT EXISTS todo_items (
     due_at_millis INTEGER NOT NULL,
     completed INTEGER NOT NULL DEFAULT 0 CHECK (completed IN (0, 1)),
     created_at_millis INTEGER NOT NULL,
+    updated_at_millis INTEGER NOT NULL,
+    remote_version INTEGER,
     reminder_repeat TEXT NOT NULL CHECK (reminder_repeat IN ('NONE', 'DAILY', 'WEEKLY')),
     image_file_name TEXT,
     trashed_from_checklist_id TEXT,
@@ -41,5 +46,7 @@ CREATE TABLE IF NOT EXISTS local_settings (
     dock_plus_placement TEXT NOT NULL CHECK (dock_plus_placement IN ('CENTER', 'LEFT_EDGE', 'RIGHT_EDGE')),
     dock_actions_json TEXT NOT NULL,
     never_show_update_dialog INTEGER NOT NULL DEFAULT 0 CHECK (never_show_update_dialog IN (0, 1)),
-    future_sync_enabled INTEGER NOT NULL DEFAULT 0 CHECK (future_sync_enabled IN (0, 1))
+    future_sync_enabled INTEGER NOT NULL DEFAULT 0 CHECK (future_sync_enabled IN (0, 1)),
+    language_mode TEXT NOT NULL DEFAULT 'system' CHECK (language_mode IN ('system', 'en', 'zh-Hans', 'ar', 'fr', 'ru', 'es')),
+    language_remote_version INTEGER
 );
