@@ -1,14 +1,14 @@
 {
   "name": "pixeldone-windows",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "Rust-first Windows client for PixelDone",
   "type": "module",
   "private": true,
   "packageManager": "bun@1.3.14",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
-    "build:e2e": "vite build --mode e2e",
+    "build": "svelte-kit sync && vite build",
+    "build:e2e": "svelte-kit sync && vite build --mode e2e",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

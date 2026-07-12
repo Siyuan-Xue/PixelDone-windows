@@ -15,12 +15,77 @@ export interface ParityRow {
 export interface ParityManifest {
   schemaVersion: number;
   baseline: { product: string; version: string; versionCode: number; commit: string; roomSchema: number };
+  windowsTarget: {
+    product: string;
+    version: string;
+    stage: 'release_candidate' | 'released';
+    evidence: string[];
+  };
   rows: ParityRow[];
 }
 
+interface ParityBaselineManifest extends Omit<ParityManifest, 'windowsTarget'> {}
+
+interface ParityOverrideGroup {
+  id: string;
+  rows: string[];
+  status: ParityStatus;
+  windowsEvidence?: string[];
+  windowsTests?: string[];
+}
+
+interface ParityReleaseOverlay {
+  schemaVersion: number;
+  baselineManifest: string;
+  windowsTarget: ParityManifest['windowsTarget'];
+  overrideGroups: ParityOverrideGroup[];
+}
+
+export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.1.2.yaml';
+
 export async function loadManifest(): Promise<ParityManifest> {
-  const file = Bun.file(new URL('../parity/pixeldone-3.1.0.yaml', import.meta.url));
-  return JSON.parse(await file.text()) as ParityManifest;
+  const overlayUrl = new URL(`../${CURRENT_PARITY_MANIFEST}`, import.meta.url);
+  const overlay = JSON.parse(await Bun.file(overlayUrl).text()) as ParityReleaseOverlay;
+  const baseline = JSON.parse(
+    await Bun.file(new URL(overlay.baselineManifest, overlayUrl)).text()
+  ) as ParityBaselineManifest;
+  const overrides = new Map<string, ParityOverrideGroup>();
+
+  for (const group of overlay.overrideGroups) {
+    for (const rowId of group.rows) {
+      if (overrides.has(rowId)) throw new Error(`Duplicate parity override for ${rowId}`);
+      overrides.set(rowId, group);
+    }
+  }
+
+  const knownRows = new Set(baseline.rows.map((row) => row.id));
+  for (const rowId of overrides.keys()) {
+    if (!knownRows.has(rowId)) throw new Error(`Unknown parity override row ${rowId}`);
+  }
+
+  return {
+    schemaVersion: overlay.schemaVersion,
+    baseline: baseline.baseline,
+    windowsTarget: overlay.windowsTarget,
+    rows: baseline.rows.map((row) => {
+      const override = overrides.get(row.id);
+      if (!override) return row;
+      return {
+        ...row,
+        status: override.status,
+        windows: {
+          ...row.windows,
+          tests: [...new Set([...row.windows.tests, ...(override.windowsTests ?? [])])]
+        },
+        evidence: {
+          ...row.evidence,
+          windows: [
+            ...new Set([...row.evidence.windows, ...(override.windowsEvidence ?? [])])
+          ]
+        }
+      };
+    })
+  };
 }
 
 export function summarize(manifest: ParityManifest) {

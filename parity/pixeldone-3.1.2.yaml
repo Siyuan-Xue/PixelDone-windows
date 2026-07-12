@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "baselineManifest": "pixeldone-3.1.0.yaml",
+  "windowsTarget": {
+    "product": "PixelDone Windows",
+    "version": "3.1.2",
+    "stage": "released",
+    "evidence": ["parity/evidence/windows/release-3.1.2.md"]
+  },
+  "overrideGroups": [
+    {
+      "id": "desktop-ui-3.1.2",
+      "rows": [
+        "LIST-FIXED-001",
+        "LIST-CRUD-001",
+        "LIST-MINIMUM-001",
+        "LIST-HISTORY-001",
+        "TODO-CRUD-001",
+        "TODO-FIELDS-001",
+        "TODO-PRIORITY-001",
+        "TODO-DUE-001",
+        "TODO-REPEAT-001",
+        "TODO-SORT-001",
+        "TODO-DDL-001",
+        "TODO-COMPLETE-001",
+        "TODO-DELAY-001",
+        "TODO-HIGHLIGHT-001",
+        "TODO-COMPACT-001",
+        "DOCK-HIDE-001",
+        "DOCK-CLEAN-001",
+        "DOCK-QUICK-001",
+        "TRASH-RESTORE-001",
+        "TRASH-PURGE-001",
+        "IMAGE-LOCAL-001",
+        "REMINDER-NORMAL-001",
+        "REMINDER-XHIGH-001",
+        "REMINDER-BATCH-001",
+        "REMINDER-RECONCILE-001",
+        "SETTINGS-THEME-001",
+        "SETTINGS-DOCK-001",
+        "SETTINGS-LANGUAGE-001",
+        "SETTINGS-CLOUD-ICONS-001",
+        "AUTH-001",
+        "SYNC-MANUAL-001",
+        "SYNC-CONFLICT-001",
+        "SYNC-IMAGE-LOCAL-001",
+        "UPDATE-SOURCE-001",
+        "UPDATE-CHANNEL-001",
+        "WINDOWS-TRAY-001"
+      ],
+      "status": "verified",
+      "windowsEvidence": ["parity/evidence/windows/release-3.1.2.md"],
+      "windowsTests": [
+        "scripts/ui-dock.test.ts",
+        "scripts/ui-editor.test.ts",
+        "e2e/specs/bootstrap.e2e.ts",
+        "e2e/specs/layout.e2e.ts"
+      ]
+    },
+    {
+      "id": "release-build-3.1.2",
+      "rows": ["RELEASE-NSIS-001"],
+      "status": "verified",
+      "windowsEvidence": ["parity/evidence/windows/release-3.1.2.md"]
+    }
+  ]
+}

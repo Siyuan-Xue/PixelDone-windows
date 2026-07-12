@@ -56,30 +56,6 @@ pub fn replace_scheduled_toasts(occurrences: &[ReminderOccurrence]) -> Result<us
     Ok(occurrences.len())
 }
 
-pub fn schedule_snoozed_toast(occurrence: &ReminderOccurrence) -> Result<(), AppError> {
-    let notifier = notification_notifier()?;
-    let xml = XmlDocument::new().map_err(platform_error)?;
-    xml.LoadXml(&HSTRING::from(scheduled_toast_xml(occurrence)))
-        .map_err(platform_error)?;
-    let toast = ScheduledToastNotification::CreateScheduledToastNotification(
-        &xml,
-        DateTime {
-            UniversalTime: occurrence
-                .delivery_at_millis
-                .saturating_mul(10_000)
-                .saturating_add(WINDOWS_EPOCH_TICKS),
-        },
-    )
-    .map_err(platform_error)?;
-    toast
-        .SetTag(&HSTRING::from(schedule_tag(occurrence)))
-        .map_err(platform_error)?;
-    toast
-        .SetGroup(&HSTRING::from(REMINDER_GROUP))
-        .map_err(platform_error)?;
-    notifier.AddToSchedule(&toast).map_err(platform_error)
-}
-
 fn notification_notifier() -> Result<ToastNotifier, AppError> {
     let notifier =
         ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(APP_USER_MODEL_ID))

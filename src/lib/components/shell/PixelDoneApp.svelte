@@ -3,7 +3,11 @@
   import { listen } from '@tauri-apps/api/event';
   import { open } from '@tauri-apps/plugin-dialog';
   import Icon from '$lib/components/common/Icon.svelte';
+  import TodoDock from '$lib/components/shell/TodoDock.svelte';
+  import TodoEditorModal from '$lib/components/shell/TodoEditorModal.svelte';
+  import { reconcileEditorMode, type TodoEditorMode } from '$lib/components/shell/editor';
   import { localeFor, message, type MessageKey } from '$lib/generated/i18n';
+  import { windowsMessage, type WindowsMessageKey } from '$lib/i18n/windows';
   import type {
     AppLanguage,
     AppError,
@@ -24,10 +28,7 @@
   import {
     api,
     applyMutation,
-    dateTimeLocalValue,
-    emptyDraft,
-    millisFromDateTimeLocal,
-    repeatLabel
+    emptyDraft
   } from '$lib/ipc/client';
 
   let snapshot = $state<AppSnapshot>(null!);
@@ -35,12 +36,12 @@
   let errorMessage = $state('');
   let selectedTodoId = $state<string | null>(null);
   let draft = $state<TodoDraft>(emptyDraft());
-  let isNewTodo = $state(false);
+  let editorMode = $state<TodoEditorMode>({ kind: 'closed' });
+  let editorTrigger = $state<HTMLElement | null>(null);
   let creatingList = $state(false);
   let newListName = $state('');
   let editingListId = $state<string | null>(null);
   let listNameDraft = $state('');
-  let inspectorOpen = $state(false);
   let completionHold = $state<Record<string, boolean>>({});
   let highlightedTodoId = $state<string | null>(null);
   let authEmail = $state('');
@@ -61,18 +62,24 @@
   let selectedList = $derived(
     snapshot?.checklists.find((list) => list.id === snapshot?.selectedChecklistId) ?? null
   );
-  let selectedTodo = $derived(
-    selectedList?.items.find((item) => item.id === selectedTodoId) ?? null
-  );
+  let selectedTodo = $derived.by(() => {
+    const mode = editorMode;
+    if (mode.kind !== 'edit') return null;
+    return selectedList?.items.find((item) => item.id === mode.todoId) ?? null;
+  });
   let normalLists = $derived(snapshot?.checklists.filter((list) => list.kind === 'NORMAL') ?? []);
   let specialLists = $derived(snapshot?.checklists.filter((list) => list.kind !== 'NORMAL') ?? []);
   let locale = $derived(localeFor(snapshot?.settings.languageMode ?? 'SYSTEM'));
   let rtl = $derived(locale === 'ar');
   let displayItems = $derived.by(() => {
     if (!selectedList || !snapshot) return [];
-    const items = selectedList.items.filter((item) => !snapshot.hideCompleted || !item.completed);
+    const items = selectedList.items.filter(
+      (item) => !snapshot.hideCompleted || !item.completed || completionHold[item.id]
+    );
     return [...items].sort((left, right) => compareTodo(left, right, snapshot.sortMode));
   });
+  let activeItems = $derived(displayItems.filter((item) => !item.completed || completionHold[item.id]));
+  let completedItems = $derived(displayItems.filter((item) => item.completed && !completionHold[item.id]));
 
   const languageOptions: Array<{ value: AppLanguage; label: string | null }> = [
     { value: 'SYSTEM', label: null },
@@ -84,15 +91,6 @@
     { value: 'SPANISH', label: 'Español' }
   ];
   const allDockActions: DockAction[] = ['SORT', 'DEADLINE', 'HIDE_DONE', 'DELETE_DONE', 'BATCH_DELETE'];
-  const enhancedAlarmTranslations: Record<string, { title: string; description: string }> = {
-    en: { title: 'Enhanced XHIGH alarm', description: 'Off by default. XHIGH uses a normal Windows notification unless you enable the persistent alarm.' },
-    'zh-Hans': { title: '增强 XHIGH 闹钟', description: '默认关闭。关闭时 XHIGH 与其他任务一样使用普通 Windows 通知。' },
-    ar: { title: 'منبّه XHIGH المحسّن', description: 'متوقف افتراضيًا. يستخدم XHIGH إشعار Windows عاديًا ما لم تفعّل المنبّه المستمر.' },
-    fr: { title: 'Alarme XHIGH renforcée', description: 'Désactivée par défaut. XHIGH utilise une notification Windows normale sauf si vous activez l’alarme persistante.' },
-    ru: { title: 'Усиленный будильник XHIGH', description: 'По умолчанию выключен. XHIGH использует обычное уведомление Windows, пока вы не включите постоянный будильник.' },
-    es: { title: 'Alarma XHIGH mejorada', description: 'Desactivada de forma predeterminada. XHIGH usa una notificación normal de Windows salvo que actives la alarma persistente.' }
-  };
-  let enhancedAlarmCopy = $derived(enhancedAlarmTranslations[locale] ?? enhancedAlarmTranslations.en);
 
   onMount(() => {
     const cleanups: Array<() => void> = [];
@@ -117,12 +115,37 @@
     return () => cleanups.forEach((cleanup) => cleanup());
   });
 
+  $effect(() => {
+    if (!selectedList || editorMode.kind !== 'edit') return;
+    const reconciled = reconcileEditorMode(editorMode, selectedList.items);
+    if (reconciled.kind === 'closed') {
+      editorMode = reconciled;
+      selectedTodoId = null;
+      requestAnimationFrame(() => editorTrigger?.focus());
+    }
+  });
+
   function t(key: MessageKey): string {
     return message(locale, key);
   }
 
-  function localCopy(english: string, chinese: string): string {
-    return locale === 'zh-Hans' ? chinese : english;
+  function wt(key: WindowsMessageKey): string {
+    return windowsMessage(locale, key);
+  }
+
+  function syncStateLabel(): string {
+    const keys: Record<string, MessageKey> = {
+      LOCAL_ONLY: 'local_only',
+      SIGNED_OUT: 'signed_out',
+      IDLE: 'ready',
+      SYNCING: 'syncing',
+      SYNCED: 'synced',
+      CONFLICT: 'conflict',
+      ERROR: 'error',
+      SERVER_UPDATE_REQUIRED: 'server_update_required'
+    };
+    const key = keys[snapshot.sync.state];
+    return key ? t(key) : snapshot.sync.state;
   }
 
   function formatBytes(bytes: number): string {
@@ -133,7 +156,7 @@
 
   async function deleteLegacyData(): Promise<void> {
     if (!storageInfo?.legacyRoamingDatabasePath) return;
-    if (!confirm(localCopy('Delete the legacy Roaming database? The active Local database is not affected.', '删除旧版 Roaming 数据库？当前 Local 数据库不会受影响。'))) return;
+    if (!confirm(wt('legacyDeleteConfirm'))) return;
     await api.deleteLegacyRoamingData(true);
     storageInfo = await api.getStorageInfo();
   }
@@ -179,44 +202,47 @@
   async function chooseChecklist(id: string): Promise<void> {
     if (!snapshot || id === snapshot.selectedChecklistId) return;
     selectedTodoId = null;
-    isNewTodo = false;
-    inspectorOpen = false;
+    closeEditor(false);
     await commit(api.selectChecklist(snapshot.revision, id));
   }
 
-  function chooseTodo(item: TodoItem): void {
+  function chooseTodo(item: TodoItem, trigger?: HTMLElement): void {
     selectedTodoId = item.id;
-    isNewTodo = false;
+    editorMode = { kind: 'edit', todoId: item.id };
+    editorTrigger = trigger ?? (document.activeElement as HTMLElement | null);
     draft = {
       title: item.title,
       priority: item.priority,
       dueAtMillis: item.dueAtMillis,
       reminderRepeat: item.reminderRepeat
     };
-    inspectorOpen = true;
   }
 
-  function beginNewTodo(): void {
+  function beginNewTodo(trigger?: HTMLElement): void {
     if (selectedList?.kind !== 'NORMAL') return;
     selectedTodoId = null;
-    isNewTodo = true;
+    editorMode = { kind: 'new' };
+    editorTrigger = trigger ?? (document.activeElement as HTMLElement | null);
     draft = emptyDraft();
-    inspectorOpen = true;
-    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#todo-title')?.focus());
+  }
+
+  function closeEditor(restoreFocus = true): void {
+    editorMode = { kind: 'closed' };
+    selectedTodoId = null;
+    if (restoreFocus) requestAnimationFrame(() => editorTrigger?.focus());
   }
 
   async function saveTodo(): Promise<void> {
     if (!snapshot || !selectedList) return;
-    const result = isNewTodo
+    const result = editorMode.kind === 'new'
       ? await commit(api.createTodo(snapshot.revision, selectedList.id, { ...draft }))
-      : selectedTodoId
-        ? await commit(api.updateTodo(snapshot.revision, selectedList.id, selectedTodoId, { ...draft }))
+      : editorMode.kind === 'edit'
+        ? await commit(api.updateTodo(snapshot.revision, selectedList.id, editorMode.todoId, { ...draft }))
         : null;
     if (result) {
       const todoId = result.changedIds.find((id) => id !== selectedList.id) ?? selectedTodoId;
       highlight(todoId ?? null);
-      isNewTodo = false;
-      selectedTodoId = todoId ?? null;
+      closeEditor();
     }
   }
 
@@ -243,8 +269,7 @@
   async function moveSelectedToTrash(): Promise<void> {
     if (!snapshot || !selectedList || !selectedTodoId) return;
     if (await commit(api.moveTodoToTrash(snapshot.revision, selectedList.id, selectedTodoId))) {
-      selectedTodoId = null;
-      inspectorOpen = false;
+      closeEditor();
     }
   }
 
@@ -381,6 +406,20 @@
             : false;
   }
 
+  function dockEnabled(action: DockAction): boolean {
+    if (action === 'DELETE_DONE') return Boolean(selectedList?.items.some((item) => item.completed));
+    if (action === 'BATCH_DELETE') return Boolean(selectedList?.items.length);
+    return true;
+  }
+
+  function dockLabel(action: DockAction): string {
+    return t(action === 'SORT' ? 'toggle_sort'
+      : action === 'DEADLINE' ? 'toggle_deadline'
+        : action === 'HIDE_DONE' ? 'toggle_done_visibility'
+          : action === 'DELETE_DONE' ? 'clean_completed_tasks'
+            : 'toggle_quick_delete');
+  }
+
   function formatDue(item: TodoItem): string {
     if (item.dueAtMillis <= 0) return t('deadline_none');
     if (snapshot.showDeadlineCountdown) {
@@ -394,6 +433,10 @@
     return new Intl.DateTimeFormat(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(item.dueAtMillis);
   }
 
+  function repeatText(item: TodoItem): string {
+    return t(item.reminderRepeat === 'NONE' ? 'repeat_none' : item.reminderRepeat === 'DAILY' ? 'repeat_daily' : 'repeat_weekly');
+  }
+
   function errorText(error: unknown): string {
     if (typeof error === 'string') return error;
     if (error && typeof error === 'object' && 'message' in error) return String(error.message);
@@ -401,16 +444,34 @@
   }
 
   function handleKeys(event: KeyboardEvent): void {
-    if (event.ctrlKey && event.key.toLowerCase() === 'n') {
+    if (event.key === 'Escape') {
+      if (previewData) {
+        previewData = null;
+      } else if (conflictOpen) {
+        conflictOpen = false;
+      } else if (editorMode.kind !== 'closed') {
+        closeEditor();
+      } else {
+        creatingList = false;
+        editingListId = null;
+      }
+      return;
+    }
+
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const isEditingText = Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'));
+    if (editorMode.kind !== 'closed' || conflictOpen || previewData || isEditingText) return;
+
+    if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'n') {
+      event.preventDefault();
+      creatingList = true;
+      requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#new-list-name')?.focus());
+    } else if (event.ctrlKey && event.key.toLowerCase() === 'n') {
       event.preventDefault();
       beginNewTodo();
     } else if (event.altKey && event.key === 'ArrowLeft' && snapshot?.checklistHistory.length) {
       event.preventDefault();
       void commit(api.backChecklist(snapshot.revision));
-    } else if (event.key === 'Escape') {
-      inspectorOpen = false;
-      previewData = null;
-      conflictOpen = false;
     }
   }
 </script>
@@ -424,28 +485,34 @@
   <main class:dark={snapshot.settings.darkTheme} class:rtl class="app-shell">
     <aside class="sidebar" aria-label={t('app')}>
       <div class="brand-row">
-        <div><span class="eyebrow">PIXEL UTILITY</span><h1>PixelDone</h1></div>
-        <button class="icon-button" title={t('new_list')} onclick={() => (creatingList = !creatingList)}><Icon name="plus" /></button>
+        <div class="brand-copy"><span class="eyebrow">{wt('productKind')}</span><h1>PixelDone</h1></div>
       </div>
 
       <nav class="list-nav" aria-label={t('app')}>
-        <span class="section-label">CHECKLISTS</span>
+        <div class="list-nav-header sidebar-section-head">
+          <span class="section-label">{wt('checklists')}</span>
+          <button class="new-list-button" title={`${t('new_list')} · Ctrl+Shift+N`} aria-label={t('new_list')} aria-expanded={creatingList} onclick={() => { creatingList = !creatingList; requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#new-list-name')?.focus()); }}><Icon name="plus" /></button>
+        </div>
+        {#if creatingList}
+          <form class="inline-create" onsubmit={submitNewList}><input id="new-list-name" aria-label={t('new_list')} placeholder={t('list_name')} bind:value={newListName} /><button type="submit">{t('add')}</button></form>
+        {/if}
         {#each normalLists as list (list.id)}
           <div class:active={list.id === snapshot.selectedChecklistId} class="nav-row">
-            <button class="nav-main" oncontextmenu={(event) => { event.preventDefault(); beginRename(list); }} onclick={() => void chooseChecklist(list.id)}>
-              <span class="nav-icon"><Icon name="list" /></span>
-              {#if editingListId === list.id}
-                <input id="rename-list" aria-label={t('list_name')} bind:value={listNameDraft} onblur={() => void saveListName()} onkeydown={(event) => event.key === 'Enter' && void saveListName()} onclick={(event) => event.stopPropagation()} />
-              {:else}
+            {#if editingListId === list.id}
+              <div class="nav-main nav-main-edit">
+                <span class="nav-icon"><Icon name="list" /></span>
+                <input id="rename-list" aria-label={t('list_name')} bind:value={listNameDraft} onblur={() => void saveListName()} onkeydown={(event) => event.key === 'Enter' && void saveListName()} />
+              </div>
+            {:else}
+              <button class="nav-main" onclick={() => void chooseChecklist(list.id)}>
+                <span class="nav-icon"><Icon name="list" /></span>
                 <span class="nav-name">{list.name}</span><span class="nav-count">{list.items.filter((item) => !item.completed).length}</span>
-              {/if}
-            </button>
-            {#if editingListId !== list.id}<button class="row-more" title={t('edit_list')} onclick={() => beginRename(list)}><Icon name="more" /></button>{/if}
+              </button>
+            {/if}
+            {#if editingListId !== list.id}<button class="row-more" title={t('edit_list')} aria-label={`${t('edit_list')}: ${list.name}`} onclick={() => beginRename(list)}><Icon name="edit" /></button>{/if}
+            {#if editingListId !== list.id && normalLists.length > 1}<button class="row-delete" title={t('delete_list')} aria-label={`${t('delete_list')}: ${list.name}`} onclick={() => void deleteList(list)}><Icon name="trash" /></button>{/if}
           </div>
         {/each}
-        {#if creatingList}
-          <form class="inline-create" onsubmit={submitNewList}><input aria-label={t('new_list')} placeholder="NEW LIST" bind:value={newListName} /><button type="submit">{t('add')}</button></form>
-        {/if}
       </nav>
 
       <nav class="special-nav" aria-label={t('app_options')}>
@@ -457,48 +524,91 @@
         {/each}
       </nav>
 
-      <div class="cloud-state"><Icon name="cloud" /><span><strong>{snapshot.sync.state}</strong>{snapshot.auth.userEmail ?? t('signed_out')}</span></div>
+      <footer class="sidebar-footer">
+        <div class="cloud-state"><Icon name="cloud" /><span><strong>{syncStateLabel()}</strong>{snapshot.auth.userEmail ?? t('signed_out')}</span></div>
+        <div class="maker-line"><span>PIXELDONE</span><span>{wt('maker')}</span></div>
+      </footer>
     </aside>
 
     <section class="workspace">
-      <header class="workspace-header">
-        <div class="title-stack">
-          <span class="eyebrow">{selectedList.kind === 'NORMAL' ? 'CHECKLIST' : 'SYSTEM'}</span>
+      <header class="workspace-header workspace-status">
+        <div class="title-stack status-title">
+          <span class="eyebrow">{selectedList.kind === 'NORMAL' ? wt('checklists') : wt('system')}</span>
           <div class="title-line">
             {#if snapshot.checklistHistory.length}<button class="icon-button" title="Alt+Left" onclick={() => void commit(api.backChecklist(snapshot.revision))}><Icon name="back" /></button>{/if}
-            <h2>{selectedList.name}</h2><span>{selectedList.items.filter((item) => !item.completed).length} {t('active_done_count').split('%')[0]}</span>
+            <h2 dir="auto">{selectedList.name}</h2>
+            {#if selectedList.kind === 'NORMAL'}<span class="status-counts"><span class="status-count">{wt('active')} {selectedList.items.filter((item) => !item.completed).length}</span><span class="status-count">{wt('done')} {selectedList.items.filter((item) => item.completed).length}</span></span>{/if}
           </div>
         </div>
-        <div class="header-actions">
-          {#if selectedList.kind === 'NORMAL'}
-            <button class="quiet-button" onclick={() => void toggleSort()}>{snapshot.sortMode} SORT</button>
-            {#if normalLists.length > 1}<button class="danger-button" onclick={() => void deleteList(selectedList)}>{t('delete_list')}</button>{/if}
-          {/if}
+        <div class="header-actions status-actions status-signals">
+          <button class="status-chip status-signal sync-chip" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}><Icon name="cloud" /><span>{syncStateLabel()}</span>{#if snapshot.sync.pendingCount}<strong>{snapshot.sync.pendingCount}</strong>{/if}</button>
+          {#if snapshot.sync.conflictCount}<button class="status-chip status-signal conflict" onclick={() => void openConflicts()}>{t('conflicts')} {snapshot.sync.conflictCount}</button>{/if}
+          {#if snapshot.update.state === 'AVAILABLE'}<button class="status-chip status-signal update-chip" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('updateReady')}</button>{/if}
+          {#if snapshot.reminder.message || snapshot.reminder.scheduleTruncated}<button class="status-chip status-signal error" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('notificationIssue')}</button>{/if}
         </div>
       </header>
 
+      {#if snapshot.settings.enhancedXhighAlarmEnabled && snapshot.reminder.activeTodoIds.length}
+        <div class="workspace-alert"><strong>{wt('alarmRinging')}</strong><button class="quiet-button" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('openSettings')}</button></div>
+      {/if}
+
+      {#if errorMessage}
+        <div class="workspace-alert operation-error" role="alert" aria-live="assertive">
+          <span>{errorMessage}</span>
+          <button class="icon-button" type="button" aria-label={t('close')} onclick={() => (errorMessage = '')}><Icon name="close" /></button>
+        </div>
+      {/if}
+
       {#if selectedList.kind === 'NORMAL'}
         <div class="task-list" aria-label={selectedList.name}>
-          {#if displayItems.length === 0}
-            <div class="empty-state"><span class="empty-glyph">□</span><h3>{t('ready')}</h3><p>{t('add_task_to_begin')}</p><button class="primary-button" onclick={beginNewTodo}>{t('new_task')}</button></div>
+          <div class="task-list-inner">
+          {#if selectedList.items.length === 0}
+            <div class="empty-state"><span class="empty-glyph">□</span><h3>{t('ready')}</h3><p>{t('add_task_to_begin')}</p><button class="primary-button" onclick={(event) => beginNewTodo(event.currentTarget)}>{t('new_task')}</button></div>
           {:else}
-            {#each displayItems as item (item.id)}
-              <div role="button" class:completed={item.completed} class:selected={item.id === selectedTodoId} class:held={completionHold[item.id]} class:highlighted={highlightedTodoId === item.id} class="task-row priority-{item.priority.toLowerCase()}" onclick={() => chooseTodo(item)} onkeydown={(event) => event.key === 'Enter' && chooseTodo(item)} tabindex="0">
+            {#each activeItems as item (item.id)}
+              <article class:completed={item.completed} class:selected={item.id === selectedTodoId} class:held={completionHold[item.id]} class:highlighted={highlightedTodoId === item.id} class="task-row priority-{item.priority.toLowerCase()}">
                 <button class:checked={item.completed} class="completion-control" aria-label={item.completed ? t('show') : t('hide')} onclick={(event) => { event.stopPropagation(); void toggleTodo(item); }}>{#if item.completed}<Icon name="check" size={12} />{/if}</button>
-                <div class="task-copy"><strong>{item.title}</strong>{#if !item.completed}<span class:overdue={item.dueAtMillis <= Date.now()}>{formatDue(item)} · {item.priority} · {repeatLabel(item.reminderRepeat)}</span>{/if}</div>
+                <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto">{item.title}</strong>{#if !item.completed}<span class:overdue={item.dueAtMillis > 0 && item.dueAtMillis <= Date.now()}>{#if item.priority === 'XHIGH'}<Icon name="alarm" size={13} /> {/if}{formatDue(item)} · {item.priority} · {repeatText(item)}</span>{/if}</button>
                 {#if item.imageFileName}<button class="attachment-badge" onclick={(event) => { event.stopPropagation(); void showImagePreview(item.id); }}><Icon name="image" /></button>{/if}
                 {#if snapshot.quickDelete}<button class="delete-slot" onclick={(event) => { event.stopPropagation(); selectedTodoId = item.id; void moveSelectedToTrash(); }}>{t('delete')}</button>{/if}
-              </div>
+              </article>
             {/each}
+
+            {#if selectedList.items.some((item) => item.completed)}
+              <section class="completed-group" aria-label={wt('completedTasks')}>
+                <header class="completed-group-header">
+                  <span><strong>{wt('completedTasks')}</strong> · {selectedList.items.filter((item) => item.completed).length}</span>
+                  <div class="completed-group-actions">
+                    <button class="quiet-button" onclick={() => void toggleHideDone()}>{snapshot.hideCompleted ? wt('showCompleted') : wt('hideCompleted')}</button>
+                    <button class="quiet-button" onclick={() => void cleanCompleted()}>{t('clean_done')}</button>
+                  </div>
+                </header>
+                {#if !snapshot.hideCompleted}
+                  {#each completedItems as item (item.id)}
+                    <article class:selected={item.id === selectedTodoId} class:highlighted={highlightedTodoId === item.id} class="task-row completed priority-{item.priority.toLowerCase()}">
+                      <button class="completion-control checked" aria-label={t('show')} onclick={() => void toggleTodo(item)}><Icon name="check" size={12} /></button>
+                      <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto">{item.title}</strong></button>
+                      {#if item.imageFileName}<button class="attachment-badge" onclick={() => void showImagePreview(item.id)}><Icon name="image" /></button>{/if}
+                      {#if snapshot.quickDelete}<button class="delete-slot" onclick={() => { selectedTodoId = item.id; void moveSelectedToTrash(); }}>{t('delete')}</button>{/if}
+                    </article>
+                  {/each}
+                {/if}
+              </section>
+            {/if}
           {/if}
+          </div>
         </div>
 
-        <div class="dock" data-placement={snapshot.settings.dock.plusPlacement}>
-          {#each snapshot.settings.dock.actions as action}
-            <button class:active={dockActive(action)} onclick={() => dockAction(action)}>{action === 'DEADLINE' ? 'DDL' : action === 'DELETE_DONE' ? 'CLEAN DONE' : action === 'BATCH_DELETE' ? 'QUICK DELETE' : action.replace('_', ' ')}</button>
-          {/each}
-          <button class="dock-add" title={t('new_task')} onclick={beginNewTodo}><Icon name="plus" size={18} /></button>
-        </div>
+        <TodoDock
+          actions={snapshot.settings.dock.actions}
+          placement={snapshot.settings.dock.plusPlacement}
+          active={dockActive}
+          enabled={dockEnabled}
+          labelFor={dockLabel}
+          addLabel={t('new_task')}
+          onAction={dockAction}
+          onAdd={beginNewTodo}
+        />
       {:else if selectedList.kind === 'TRASH'}
         <div class="task-list trash-list">
           {#if selectedList.items.length === 0}
@@ -512,6 +622,7 @@
         </div>
       {:else}
         <div class="settings-page">
+          <div class="settings-grid">
           <section>
             <span class="section-label">{t('settings_cloud')}</span>
             <div class="setting-row cloud-account">
@@ -550,60 +661,58 @@
 
           <section>
             <span class="section-label">{t('settings_dock')}</span>
-            <div class="segmented-row">{#each ['LEFT_EDGE', 'CENTER', 'RIGHT_EDGE'] as placement}<button class:active={snapshot.settings.dock.plusPlacement === placement} onclick={() => void setDockPlacement(placement as DockPlusPlacement)}>{placement}</button>{/each}</div>
+            <div class="segmented-row">{#each ['LEFT_EDGE', 'CENTER', 'RIGHT_EDGE'] as placement}<button class="dock-placement-button" data-placement={placement} class:active={snapshot.settings.dock.plusPlacement === placement} onclick={() => void setDockPlacement(placement as DockPlusPlacement)}>{placement}</button>{/each}</div>
             <div class="dock-choice-grid">{#each allDockActions as action}<button class:selected={snapshot.settings.dock.actions.includes(action)} onclick={() => void toggleDockAction(action)}><span class="pixel-choice"></span>{action}</button>{/each}</div>
           </section>
 
           <section>
             <span class="section-label">{t('settings_updates')}</span>
-            <div class="setting-row"><div><strong>{localCopy('Automatic update checks', '自动检查更新')}</strong><p>{localCopy('Checks only. Downloads and installation always require your click.', '仅自动检查；下载和安装始终需要你手动确认。')}</p></div><button aria-label={localCopy('Automatic update checks', '自动检查更新')} class:active={snapshot.settings.automaticUpdateCheckEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, automaticUpdateCheckEnabled: !snapshot.settings.automaticUpdateCheckEnabled })}><span></span></button></div>
-            <div class="setting-row"><div><strong>{localCopy('Current version', '当前版本')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS{#if snapshot.update.message} · {snapshot.update.message}{/if}</p></div><button class="quiet-button" onclick={() => void commit(api.checkForUpdate(snapshot.revision))}>{t('check_update')}</button></div>
+            <div class="setting-row"><div><strong>{wt('automaticUpdateChecks')}</strong><p>{wt('automaticUpdateChecksDetail')}</p></div><button aria-label={wt('automaticUpdateChecks')} class:active={snapshot.settings.automaticUpdateCheckEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, automaticUpdateCheckEnabled: !snapshot.settings.automaticUpdateCheckEnabled })}><span></span></button></div>
+            <div class="setting-row"><div><strong>{wt('currentVersion')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS{#if snapshot.update.message} · {snapshot.update.message}{/if}</p></div><button class="quiet-button" onclick={() => void commit(api.checkForUpdate(snapshot.revision))}>{t('check_update')}</button></div>
             {#if snapshot.update.state === 'AVAILABLE'}<button class="primary-button" onclick={() => { updateProgress = { downloadedBytes: 0, totalBytes: null }; void api.installUpdate(); }}>{t('install_updates')} {snapshot.update.availableVersion}</button>{/if}
-            {#if updateProgress}<p class="update-progress">{localCopy('Downloading', '正在下载')} {formatBytes(updateProgress.downloadedBytes)}{#if updateProgress.totalBytes} / {formatBytes(updateProgress.totalBytes)}{/if}</p>{/if}
+            {#if updateProgress}<p class="update-progress">{wt('downloading')} {formatBytes(updateProgress.downloadedBytes)}{#if updateProgress.totalBytes} / {formatBytes(updateProgress.totalBytes)}{/if}</p>{/if}
           </section>
 
           <section>
-            <span class="section-label">{localCopy('Windows integration', 'Windows 集成')}</span>
-            <div class="setting-row"><div><strong>{localCopy('Start with Windows', '开机启动')}</strong><p>{localCopy('Starts minimized so scheduled reminders stay refreshed.', '以最小化方式启动，用于持续刷新系统提醒。')}</p></div><button aria-label={localCopy('Start with Windows', '开机启动')} class:active={snapshot.settings.autostartEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, autostartEnabled: !snapshot.settings.autostartEnabled })}><span></span></button></div>
-            <div class="setting-row"><div><strong>{enhancedAlarmCopy.title}</strong><p>{enhancedAlarmCopy.description}</p></div><button aria-label={enhancedAlarmCopy.title} class:active={snapshot.settings.enhancedXhighAlarmEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, enhancedXhighAlarmEnabled: !snapshot.settings.enhancedXhighAlarmEnabled })}><span></span></button></div>
-            <div class="setting-row"><div><strong>{localCopy('Windows reminder queue', 'Windows 提醒队列')}</strong><p>{snapshot.reminder.scheduledCount} · {snapshot.reminder.state}{#if snapshot.reminder.message} · {snapshot.reminder.message}{/if}</p></div></div>
+            <span class="section-label">{wt('windowsIntegration')}</span>
+            <div class="setting-row"><div><strong>{wt('startWithWindows')}</strong><p>{wt('startWithWindowsDetail')}</p></div><button aria-label={wt('startWithWindows')} class:active={snapshot.settings.autostartEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, autostartEnabled: !snapshot.settings.autostartEnabled })}><span></span></button></div>
+            <div class="setting-row"><div><strong>{wt('enhancedAlarm')}</strong><p>{wt('enhancedAlarmDetail')}</p></div><button aria-label={wt('enhancedAlarm')} class:active={snapshot.settings.enhancedXhighAlarmEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, enhancedXhighAlarmEnabled: !snapshot.settings.enhancedXhighAlarmEnabled })}><span></span></button></div>
+            <div class="setting-row"><div><strong>{wt('reminderQueue')}</strong><p>{snapshot.reminder.scheduledCount} · {snapshot.reminder.state}{#if snapshot.reminder.message} · {snapshot.reminder.message}{/if}</p></div></div>
           </section>
 
           <section>
-            <span class="section-label">{localCopy('Storage & privacy', '存储与隐私')}</span>
+            <span class="section-label">{wt('storagePrivacy')}</span>
             {#if storageInfo}
-              <div class="setting-row storage-row"><div><strong>{localCopy('Application', '应用程序')}</strong><p><code>{storageInfo.executablePath}</code></p></div></div>
-              <div class="setting-row storage-row"><div><strong>{localCopy('Local data', '本地数据')}</strong><p><code>{storageInfo.dataRoot}</code> · {formatBytes(storageInfo.totalBytes)}</p></div><button class="quiet-button" onclick={() => void api.openDataFolder()}>{localCopy('Open folder', '打开目录')}</button></div>
+              <div class="setting-row storage-row"><div><strong>{wt('application')}</strong><p><code>{storageInfo.executablePath}</code></p></div></div>
+              <div class="setting-row storage-row"><div><strong>{wt('localData')}</strong><p><code>{storageInfo.dataRoot}</code> · {formatBytes(storageInfo.totalBytes)}</p></div><button class="quiet-button" onclick={() => void api.openDataFolder()}>{wt('openFolder')}</button></div>
               <div class="setting-row storage-row"><div><strong>SQLite</strong><p><code>{storageInfo.databasePath}</code></p></div></div>
               <div class="setting-row storage-row"><div><strong>WebView2</strong><p><code>{storageInfo.webviewDataPath}</code></p></div></div>
               <div class="setting-row storage-row"><div><strong>Windows Credential Manager</strong><p><code>{storageInfo.credentialManagerTarget}</code></p></div></div>
-              {#if storageInfo.legacyRoamingDatabasePath}<div class="setting-row storage-row"><div><strong>{localCopy('Legacy data found', '发现旧版数据')}</strong><p><code>{storageInfo.legacyRoamingDatabasePath}</code> · {formatBytes(storageInfo.legacyRoamingDatabaseBytes ?? 0)}</p></div><button class="danger-button" onclick={() => void deleteLegacyData()}>{t('delete')}</button></div>{/if}
+              {#if storageInfo.legacyRoamingDatabasePath}<div class="setting-row storage-row"><div><strong>{wt('legacyDataFound')}</strong><p><code>{storageInfo.legacyRoamingDatabasePath}</code> · {formatBytes(storageInfo.legacyRoamingDatabaseBytes ?? 0)}</p></div><button class="danger-button" onclick={() => void deleteLegacyData()}>{t('delete')}</button></div>{/if}
             {/if}
           </section>
+          </div>
         </div>
       {/if}
     </section>
 
-    <aside class:open={inspectorOpen || selectedList.kind !== 'NORMAL'} class="inspector" aria-label="INSPECTOR">
-      <div class="inspector-head"><div><span class="eyebrow">INSPECTOR</span><h2>{isNewTodo ? t('new_task') : selectedTodo?.title ?? selectedList.name}</h2></div><button class="icon-button inspector-close" title={t('close')} onclick={() => (inspectorOpen = false)}><Icon name="close" /></button></div>
-      {#if selectedList.kind === 'NORMAL' && (selectedTodo || isNewTodo)}
-        <form class="inspector-form" onsubmit={(event) => { event.preventDefault(); void saveTodo(); }}>
-          <label>{t('name')}<input id="todo-title" bind:value={draft.title} placeholder={t('new_task')} /></label>
-          <fieldset><legend>{t('field_priority')}</legend><div class="priority-segments">{#each ['XHIGH', 'HIGH', 'MEDIUM', 'LOW'] as priority}<button type="button" class:active={draft.priority === priority} class="priority-{priority.toLowerCase()}" onclick={() => (draft.priority = priority as TodoPriority)}>{priority}</button>{/each}</div></fieldset>
-          <label>{t('time')}<input type="datetime-local" value={dateTimeLocalValue(draft.dueAtMillis)} onchange={(event) => (draft.dueAtMillis = millisFromDateTimeLocal(event.currentTarget.value))} /></label>
-          <label>{t('field_repeat')}<select bind:value={draft.reminderRepeat}><option value="NONE">{t('repeat_none')}</option><option value="DAILY">{t('repeat_daily')}</option><option value="WEEKLY">{t('repeat_weekly')}</option></select></label>
-          {#if selectedTodo}
-            <div class="attachment-panel"><span class="section-label">{t('task_image')}</span><div class="image-actions"><button type="button" class="quiet-button" onclick={() => void chooseImage()}>{selectedTodo.imageFileName ? t('change') : t('add')}</button>{#if selectedTodo.imageFileName}<button type="button" class="quiet-button" onclick={() => void showImagePreview(selectedTodo.id)}>{t('preview')}</button><button type="button" class="danger-button" onclick={() => void commit(api.deleteImage(snapshot.revision, selectedList.id, selectedTodo.id))}>{t('remove')}</button>{/if}</div></div>
-          {/if}
-          <div class="form-actions"><button type="submit" class="primary-button">{t('save')}</button>{#if selectedTodo}<button type="button" class="danger-button" onclick={() => void moveSelectedToTrash()}>{t('move_task_to_trash')}</button>{/if}</div>
-        </form>
-      {:else}
-        <div class="inspector-summary"><span class="summary-number">{selectedList.items.length}</span><p>{t('items_count').replace('%1$d', '')}</p><dl><div><dt>ACTIVE</dt><dd>{selectedList.items.filter((item) => !item.completed).length}</dd></div><div><dt>COMPLETED</dt><dd>{selectedList.items.filter((item) => item.completed).length}</dd></div></dl>{#if selectedList.kind === 'NORMAL'}<button class="primary-button" onclick={beginNewTodo}>{t('new_task')}</button>{/if}<div class="shortcut-card"><span class="section-label">SHORTCUTS</span><p><kbd>Ctrl</kbd> + <kbd>N</kbd></p><p><kbd>Alt</kbd> + <kbd>←</kbd></p><p><kbd>Esc</kbd></p></div></div>
-      {/if}
-    </aside>
-
-    <footer class="status-strip"><span class="status-ready">● {snapshot.sync.state}</span><span>REV {snapshot.revision}</span><span>{snapshot.reminder.state}</span><span>{snapshot.update.state}</span>{#if errorMessage}<strong class="status-error">{errorMessage}</strong>{/if}</footer>
   </main>
+
+  {#if selectedList.kind === 'NORMAL' && editorMode.kind !== 'closed'}
+    <TodoEditorModal
+      mode={editorMode}
+      todo={selectedTodo}
+      {draft}
+      {locale}
+      onDraft={(value) => (draft = value)}
+      onSave={saveTodo}
+      onClose={closeEditor}
+      onChooseImage={chooseImage}
+      onPreviewImage={() => selectedTodo ? showImagePreview(selectedTodo.id) : undefined}
+      onRemoveImage={async () => { if (selectedTodo) await commit(api.deleteImage(snapshot.revision, selectedList.id, selectedTodo.id)); }}
+      onDelete={moveSelectedToTrash}
+    />
+  {/if}
 
   {#if conflictOpen}
     <div class="modal-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && (conflictOpen = false)}><section class="conflict-modal" role="dialog" aria-modal="true" tabindex="-1"><header><h2>{t('sync_conflicts')}</h2><button class="icon-button" onclick={() => (conflictOpen = false)}><Icon name="close" /></button></header>{#if conflicts.length === 0}<p>{t('no_conflicts')}</p>{/if}{#each conflicts as conflict}<article class="conflict-card"><h3>{conflict.title}</h3><p>{conflict.fields.join(', ')}</p><div class="conflict-columns"><pre>{JSON.stringify(conflict.localPayload, null, 2)}</pre><pre>{JSON.stringify(conflict.cloudPayload, null, 2)}</pre></div><div class="form-actions"><button class="quiet-button" onclick={() => void resolveConflict(conflict, 'KEEP_LOCAL')}>{t('keep_local')}</button><button class="primary-button" onclick={() => void resolveConflict(conflict, 'KEEP_CLOUD')}>{t('keep_cloud')}</button></div></article>{/each}</section></div>

@@ -1,8 +1,10 @@
 # PixelDone Windows 功能复刻报告
 
-> 本文件由 `bun run parity:report` 从 `parity/pixeldone-3.1.0.yaml` 生成，请勿手工维护状态。
+> 本文件由 `bun run parity:report` 从 `parity/pixeldone-3.1.2.yaml` 生成，请勿手工维护状态。
 
-基线：PixelDone Android 3.1.0（versionCode 78，commit `63471218345f6a4efcdbbd32c2d4c42acb25491c`，Room v5）。
+Windows 目标：PixelDone Windows 3.1.2（released）。
+
+功能基线：PixelDone Android 3.1.0（versionCode 78，commit `63471218345f6a4efcdbbd32c2d4c42acb25491c`，Room v5）。
 
 - Required：41
 - Verified：41

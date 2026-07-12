@@ -1,4 +1,4 @@
-import { loadManifest, summarize } from './parity';
+import { CURRENT_PARITY_MANIFEST, loadManifest, summarize } from './parity';
 
 const manifest = await loadManifest();
 const summary = summarize(manifest);
@@ -7,9 +7,11 @@ const rows = manifest.rows
   .join('\n');
 const markdown = `# PixelDone Windows 功能复刻报告
 
-> 本文件由 \`bun run parity:report\` 从 \`parity/pixeldone-3.1.0.yaml\` 生成，请勿手工维护状态。
+> 本文件由 \`bun run parity:report\` 从 \`${CURRENT_PARITY_MANIFEST}\` 生成，请勿手工维护状态。
 
-基线：PixelDone Android ${manifest.baseline.version}（versionCode ${manifest.baseline.versionCode}，commit \`${manifest.baseline.commit}\`，Room v${manifest.baseline.roomSchema}）。
+Windows 目标：${manifest.windowsTarget.product} ${manifest.windowsTarget.version}（${manifest.windowsTarget.stage}）。
+
+功能基线：PixelDone Android ${manifest.baseline.version}（versionCode ${manifest.baseline.versionCode}，commit \`${manifest.baseline.commit}\`，Room v${manifest.baseline.roomSchema}）。
 
 - Required：${summary.required}
 - Verified：${summary.counts.verified}

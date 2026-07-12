@@ -21,6 +21,7 @@ describe('Settings parity', () => {
     const rtlLabels = await $$('.language-grid button').map((button) => button.getText());
     expect(rtlLabels).toContain('English');
     expect(rtlLabels).toContain('العربية');
+    await browser.pause(300);
     await browser.saveScreenshot('parity/evidence/windows/settings-arabic.png');
   });
 });

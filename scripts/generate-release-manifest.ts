@@ -5,20 +5,20 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const directory = join(root, 'src-tauri', 'target', 'x86_64-pc-windows-msvc', 'release', 'bundle', 'nsis');
-const fileName = 'PixelDone_3.1.1_x64-setup.exe';
+const fileName = 'PixelDone_3.1.2_x64-setup.exe';
 const artifact = join(directory, fileName);
 const signature = readFileSync(`${artifact}.sig`, 'utf8').trim();
 const digest = createHash('sha256').update(readFileSync(artifact)).digest('hex').toUpperCase();
 
 writeFileSync(join(directory, `${fileName}.sha256`), `${digest}  ${fileName}\n`, 'utf8');
 writeFileSync(join(directory, 'latest.json'), `${JSON.stringify({
-  version: '3.1.1',
-  notes: 'PixelDone for Windows 3.1.1 adds event-driven multi-device sync, system-scheduled reminders, optional XHIGH alarm notifications, automatic update checks, storage transparency, and formal product branding.',
+  version: '3.1.2',
+  notes: 'PixelDone for Windows 3.1.2 introduces a two-pane desktop workspace aligned with the Android design language and removes avoidable release-build warnings.',
   pub_date: new Date().toISOString(),
   platforms: {
     'windows-x86_64': {
       signature,
-      url: `https://github.com/Siyuan-Xue/PixelDone-windows/releases/download/v3.1.1/${fileName}`
+      url: `https://github.com/Siyuan-Xue/PixelDone-windows/releases/download/v3.1.2/${fileName}`
     }
   }
 }, null, 2)}\n`, 'utf8');

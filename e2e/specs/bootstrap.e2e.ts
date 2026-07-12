@@ -11,8 +11,19 @@ describe('PixelDone desktop bootstrap', () => {
     await expect($('.app-shell')).toBeDisplayed();
     await expect($('.sidebar')).toBeDisplayed();
     await expect($('.workspace')).toBeDisplayed();
-    await expect($('.inspector')).toBeDisplayed();
-    await expect($('.status-strip')).toHaveText(expect.stringContaining('REV 0'));
+    const permanentRegions = await browser.execute(() =>
+      Array.from(document.querySelector('.app-shell')?.children ?? []).map((element) =>
+        element.classList.contains('sidebar')
+          ? 'sidebar'
+          : element.classList.contains('workspace')
+            ? 'workspace'
+            : element.className
+      )
+    );
+    expect(permanentRegions).toEqual(['sidebar', 'workspace']);
+    await expect($('.workspace-status')).toBeDisplayed();
+    expect(await $('.inspector').isExisting()).toBe(false);
+    expect(await $('.status-strip').isExisting()).toBe(false);
     mkdirSync('parity/evidence/windows', { recursive: true });
     await browser.saveScreenshot('parity/evidence/windows/main-1180x780.png');
   });

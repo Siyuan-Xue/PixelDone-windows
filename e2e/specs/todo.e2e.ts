@@ -29,8 +29,13 @@ describe('Todo and Dock parity', () => {
     await expect(row).toBeDisplayed();
     await row.$('button.completion-control').click();
     expect(await row.getAttribute('class')).toContain('held');
-    await browser.pause(2_100);
-    expect(await row.getAttribute('class')).not.toContain('held');
-    expect(await row.getAttribute('class')).toContain('completed');
+    await browser.waitUntil(async () => {
+      const completedRow = await $(`//*[contains(@class,'task-row')][.//strong[text()='E2E TODO']]`);
+      const classes = await completedRow.getAttribute('class');
+      return Boolean(classes?.includes('completed') && !classes.includes('held'));
+    });
+    const completedRow = await $(`//*[contains(@class,'task-row')][.//strong[text()='E2E TODO']]`);
+    expect(await completedRow.getAttribute('class')).not.toContain('held');
+    expect(await completedRow.getAttribute('class')).toContain('completed');
   });
 });

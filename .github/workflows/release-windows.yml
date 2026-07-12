@@ -55,4 +55,4 @@ jobs:
           releaseName: PixelDone v__VERSION__
           releaseDraft: false
           prerelease: false
-          args: --bundles nsis --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json
+          args: --bundles nsis --target x86_64-pc-windows-msvc

@@ -4,7 +4,6 @@ use crate::{
     application::{commands::mutate, state::ManagedAppState},
     domain::{AppError, MutationResult, unix_now_millis},
     infrastructure::reminder::ReminderOccurrence,
-    platform::windows::notification::schedule_snoozed_toast,
 };
 
 #[tauri::command]
@@ -68,7 +67,6 @@ pub async fn snooze_reminder(
                 Some(until - crate::domain::reminder::DEFAULT_SNOOZE_MILLIS),
             )
             .await?;
-        schedule_snoozed_toast(reminder)?;
     }
     mutate(state, expected_revision, |snapshot| {
         snapshot.reminder.state = "SNOOZED".to_owned();

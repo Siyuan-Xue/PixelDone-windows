@@ -5,15 +5,22 @@ fn formal_config_uses_professional_identity_and_protocol() {
     let config: serde_json::Value =
         serde_json::from_str(&fs::read_to_string("tauri.conf.json").unwrap()).unwrap();
     assert_eq!(config["productName"], "PixelDone");
-    assert_eq!(config["version"], "3.1.1");
+    assert_eq!(config["version"], "3.1.2");
     assert_eq!(config["mainBinaryName"], "PixelDone");
-    assert_eq!(
-        config["bundle"]["windows"]["nsis"]["installMode"],
-        "currentUser"
-    );
     assert_eq!(
         config["plugins"]["deep-link"]["desktop"]["schemes"][0],
         "pixeldone-reminder"
+    );
+}
+
+#[test]
+fn windows_platform_config_keeps_nsis_current_user_installation() {
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string("tauri.windows.conf.json").unwrap()).unwrap();
+    assert_eq!(config["bundle"]["targets"][0], "nsis");
+    assert_eq!(
+        config["bundle"]["windows"]["nsis"]["installMode"],
+        "currentUser"
     );
 }
 
@@ -39,7 +46,8 @@ fn windows_icon_source_preserves_android_geometry_and_colors() {
 fn formal_release_matches_the_3_1_0_unsigned_publisher_policy() {
     let workflow = fs::read_to_string("../.github/workflows/release-windows.yml").unwrap();
     assert!(workflow.contains("TAURI_SIGNING_PRIVATE_KEY"));
-    assert!(workflow.contains("tauri.windows.conf.json"));
+    assert!(workflow.contains("args: --bundles nsis --target x86_64-pc-windows-msvc"));
+    assert!(!workflow.contains("--config"));
     assert!(!workflow.contains("WINDOWS_CERTIFICATE_BASE64"));
     assert!(!workflow.contains("certificateThumbprint"));
 }
