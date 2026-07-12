@@ -14,7 +14,7 @@
 - Storage & privacy reports executable, SQLite, attachment, cache, log, WebView2, legacy database, and credential locations.
 - The executable is `PixelDone.exe`; the NSIS installer is `PixelDone_3.1.1_x64-setup.exe` and uses current-user product identity.
 - Windows raster/ICO/ICNS assets are generated from the Android launcher icon geometry and colors.
-- Formal CI requires both Authenticode certificate material and the Tauri updater signing key.
+- Formal CI intentionally omits Authenticode, matching 3.1.0. It requires only the Tauri updater key used to verify in-app update integrity.
 
 ## Release gates
 
@@ -28,7 +28,7 @@
 - [x] `bun run parity:check` (100.00%)
 - [x] Local unsigned validation bundle emits `PixelDone.exe` and `PixelDone_3.1.1_x64-setup.exe`.
 - [ ] Build x64 NSIS installer with production cloud configuration.
-- [ ] Verify Authenticode publisher, timestamp, updater signature, SHA-256, clean install, in-place reinstall, upgrade, and uninstall.
+- [ ] Verify the expected Unknown Publisher warning, updater signature, SHA-256, clean install, in-place reinstall, upgrade, and uninstall.
 - [ ] Validate standard and opt-in enhanced XHIGH notifications while PixelDone is closed, including notification-center retention, STOP and SNOOZE protocol activation, and the Windows-disabled state.
 - [ ] Validate two live devices: Realtime propagation in seconds, reconnect catch-up after a forced disconnect, and immediate schedule replacement/removal on the receiving Windows device.
 
@@ -37,6 +37,6 @@
 - The configured Supabase endpoint remains HTTP, so Realtime uses `ws://`. Credentials, access tokens, and synchronized data do not have transport confidentiality, integrity, or authenticated-server protection.
 - Windows may discard a scheduled notification when its delivery time was missed by more than approximately five minutes. The 15-minute reconciliation repairs future recurring schedules but intentionally does not replay stale one-time reminders.
 
-The unchecked artifact and OS integration gates must be completed before publishing `v3.1.1`. The release workflow intentionally blocks a formal build when Authenticode secrets are unavailable.
+The unchecked artifact and OS integration gates must be completed before publishing `v3.1.1`. The release workflow intentionally accepts the unsigned-publisher warning and blocks only when the existing Tauri updater integrity key is unavailable.
 
 The 2026-07-12 local unsigned 3.1.1 validation installer is 7,003,666 bytes with SHA-256 `604FC59C8DB3994140149C6AA88DCAC42D4B37D926DEF2A8E4E2B24FF4658AC1`. It is non-publishable and intentionally reported by Windows as unsigned.

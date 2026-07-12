@@ -36,12 +36,12 @@ fn windows_icon_source_preserves_android_geometry_and_colors() {
 }
 
 #[test]
-fn formal_release_workflow_requires_both_signature_layers() {
+fn formal_release_matches_the_3_1_0_unsigned_publisher_policy() {
     let workflow = fs::read_to_string("../.github/workflows/release-windows.yml").unwrap();
     assert!(workflow.contains("TAURI_SIGNING_PRIVATE_KEY"));
-    assert!(workflow.contains("WINDOWS_CERTIFICATE_BASE64"));
-    assert!(workflow.contains("certificateThumbprint"));
-    assert!(workflow.contains("tauri.signing.conf.json"));
+    assert!(workflow.contains("tauri.windows.conf.json"));
+    assert!(!workflow.contains("WINDOWS_CERTIFICATE_BASE64"));
+    assert!(!workflow.contains("certificateThumbprint"));
 }
 
 #[test]
