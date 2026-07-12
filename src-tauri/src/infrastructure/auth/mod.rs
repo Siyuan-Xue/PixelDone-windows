@@ -42,6 +42,13 @@ struct TokenUser {
 }
 
 impl SupabaseClient {
+    pub(crate) fn realtime_url(&self) -> Result<url::Url, AppError> {
+        crate::infrastructure::realtime::realtime_websocket_url(
+            &self.base_url,
+            &self.publishable_key,
+        )
+    }
+
     pub fn from_build_config() -> Result<Self, AppError> {
         let base_url = build_config::SUPABASE_URL.trim_end_matches('/').to_owned();
         let publishable_key = build_config::SUPABASE_PUBLISHABLE_KEY.to_owned();

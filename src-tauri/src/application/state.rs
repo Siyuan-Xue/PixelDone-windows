@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 use tokio::sync::{Mutex, Notify};
 
@@ -23,6 +23,8 @@ pub struct AppPaths {
     pub attachments: PathBuf,
     pub cache: PathBuf,
     pub logs: PathBuf,
+    pub webview_data: PathBuf,
+    pub legacy_roaming_database: PathBuf,
 }
 
 pub struct ManagedAppState {
@@ -32,9 +34,11 @@ pub struct ManagedAppState {
     pub session: Mutex<Option<AuthSession>>,
     pub sync_gate: Mutex<()>,
     pub sync_notify: Notify,
-    pub fired_reminders: Mutex<HashMap<String, i64>>,
-    pub snoozed_until: Mutex<HashMap<String, i64>>,
+    pub reminder_gate: Mutex<()>,
+    pub reminder_notify: Notify,
+    pub auth_notify: Notify,
     pub paths: AppPaths,
+    pub notification_identity_error: Option<String>,
 }
 
 impl ManagedAppState {
@@ -45,6 +49,7 @@ impl ManagedAppState {
         credentials: CredentialStore,
         session: Option<AuthSession>,
         paths: AppPaths,
+        notification_identity_error: Option<String>,
     ) -> Self {
         Self {
             inner: Mutex::new(RuntimeState {
@@ -56,9 +61,11 @@ impl ManagedAppState {
             session: Mutex::new(session),
             sync_gate: Mutex::new(()),
             sync_notify: Notify::new(),
-            fired_reminders: Mutex::new(HashMap::new()),
-            snoozed_until: Mutex::new(HashMap::new()),
+            reminder_gate: Mutex::new(()),
+            reminder_notify: Notify::new(),
+            auth_notify: Notify::new(),
             paths,
+            notification_identity_error,
         }
     }
 }

@@ -10,7 +10,9 @@ fn migrations_persist_and_reload_the_initial_snapshot() {
         let repository = SqliteRepository::open(&database_path)
             .await
             .expect("migrations should apply");
-        let snapshot = AppSnapshot::initial(42);
+        let mut snapshot = AppSnapshot::initial(42);
+        assert!(!snapshot.settings.enhanced_xhigh_alarm_enabled);
+        snapshot.settings.enhanced_xhigh_alarm_enabled = true;
         repository
             .save_snapshot(&snapshot)
             .await

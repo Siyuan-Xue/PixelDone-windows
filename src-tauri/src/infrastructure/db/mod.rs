@@ -34,6 +34,13 @@ pub struct StoredConflict {
     pub remote_version: Option<i64>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ReminderDeliveryState {
+    pub scheduled_at_millis: Option<i64>,
+    pub snoozed_until_millis: Option<i64>,
+    pub last_fired_at_millis: Option<i64>,
+}
+
 #[derive(Clone)]
 pub struct SqliteRepository {
     pool: SqlitePool,
@@ -54,6 +61,102 @@ impl SqliteRepository {
             .await
             .map_err(|error| AppError::Database(error.to_string()))?;
         Ok(Self { pool })
+    }
+
+    pub async fn reminder_delivery_state(
+        &self,
+        todo_id: &str,
+    ) -> Result<ReminderDeliveryState, AppError> {
+        let row = sqlx::query(
+            "SELECT scheduled_at_millis, snoozed_until_millis, last_fired_at_millis FROM reminder_delivery_state WHERE todo_id = ?",
+        )
+        .bind(todo_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row
+            .map(|row| ReminderDeliveryState {
+                scheduled_at_millis: row.try_get("scheduled_at_millis").ok(),
+                snoozed_until_millis: row.try_get("snoozed_until_millis").ok(),
+                last_fired_at_millis: row.try_get("last_fired_at_millis").ok(),
+            })
+            .unwrap_or_default())
+    }
+
+    pub async fn save_reminder_delivery_state(
+        &self,
+        todo_id: &str,
+        scheduled_at_millis: Option<i64>,
+        snoozed_until_millis: Option<i64>,
+        last_fired_at_millis: Option<i64>,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO reminder_delivery_state (todo_id, scheduled_at_millis, snoozed_until_millis, last_fired_at_millis, updated_at_millis) VALUES (?, ?, ?, ?, ?) ON CONFLICT(todo_id) DO UPDATE SET scheduled_at_millis = excluded.scheduled_at_millis, snoozed_until_millis = excluded.snoozed_until_millis, last_fired_at_millis = excluded.last_fired_at_millis, updated_at_millis = excluded.updated_at_millis",
+        )
+        .bind(todo_id)
+        .bind(scheduled_at_millis)
+        .bind(snoozed_until_millis)
+        .bind(last_fired_at_millis)
+        .bind(crate::domain::unix_now_millis())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn snoozed_reminders(&self, now_millis: i64) -> Result<Vec<(String, i64)>, AppError> {
+        let rows = sqlx::query(
+            "SELECT todo_id, snoozed_until_millis FROM reminder_delivery_state WHERE snoozed_until_millis > ?",
+        )
+        .bind(now_millis)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok((
+                    row.try_get("todo_id")?,
+                    row.try_get("snoozed_until_millis")?,
+                ))
+            })
+            .collect()
+    }
+
+    pub async fn delete_orphaned_reminder_delivery_states(
+        &self,
+        active_todo_ids: &[String],
+    ) -> Result<(), AppError> {
+        if active_todo_ids.is_empty() {
+            sqlx::query("DELETE FROM reminder_delivery_state")
+                .execute(&self.pool)
+                .await?;
+            return Ok(());
+        }
+        let placeholders = std::iter::repeat_n("?", active_todo_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let statement =
+            format!("DELETE FROM reminder_delivery_state WHERE todo_id NOT IN ({placeholders})");
+        let mut query = sqlx::query(&statement);
+        for id in active_todo_ids {
+            query = query.bind(id);
+        }
+        query.execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn autostart_initialized(&self) -> Result<bool, AppError> {
+        let initialized = sqlx::query_scalar::<_, i64>(
+            "SELECT autostart_initialized FROM local_settings WHERE id = 'settings'",
+        )
+        .fetch_optional(&self.pool)
+        .await?
+        .unwrap_or_default();
+        Ok(initialized != 0)
+    }
+
+    pub async fn mark_autostart_initialized(&self) -> Result<(), AppError> {
+        sqlx::query("UPDATE local_settings SET autostart_initialized = 1 WHERE id = 'settings'")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn load_snapshot(&self) -> Result<Option<AppSnapshot>, AppError> {
@@ -115,6 +218,8 @@ impl SqliteRepository {
         }
 
         let settings = self.load_settings().await?;
+        let (last_update_check_at_millis, next_update_check_at_millis) =
+            self.load_update_timing().await?;
         Ok(Some(
             AppSnapshot {
                 revision: metadata.try_get("revision")?,
@@ -144,6 +249,8 @@ impl SqliteRepository {
                 update: UpdateView {
                     state: "IDLE".to_owned(),
                     current_version: env!("CARGO_PKG_VERSION").to_owned(),
+                    last_checked_at_millis: last_update_check_at_millis,
+                    next_check_at_millis: next_update_check_at_millis,
                     ..UpdateView::default()
                 },
             }
@@ -153,7 +260,7 @@ impl SqliteRepository {
 
     async fn load_settings(&self) -> Result<AppSettings, AppError> {
         let Some(row) = sqlx::query(
-            "SELECT dark_theme, dock_plus_placement, dock_actions_json, never_show_update_dialog, future_sync_enabled, language_mode FROM local_settings WHERE id = 'settings'",
+            "SELECT dark_theme, dock_plus_placement, dock_actions_json, never_show_update_dialog, future_sync_enabled, language_mode, autostart_enabled, automatic_update_check_enabled, enhanced_xhigh_alarm_enabled FROM local_settings WHERE id = 'settings'",
         )
         .fetch_optional(&self.pool)
         .await?
@@ -175,7 +282,44 @@ impl SqliteRepository {
             language_mode: AppLanguage::from_sync_value(
                 &row.try_get::<String, _>("language_mode")?,
             ),
+            autostart_enabled: row.try_get::<i64, _>("autostart_enabled")? != 0,
+            automatic_update_check_enabled: row
+                .try_get::<i64, _>("automatic_update_check_enabled")?
+                != 0,
+            enhanced_xhigh_alarm_enabled: row.try_get::<i64, _>("enhanced_xhigh_alarm_enabled")?
+                != 0,
         })
+    }
+
+    async fn load_update_timing(&self) -> Result<(Option<i64>, Option<i64>), AppError> {
+        let row = sqlx::query(
+            "SELECT last_update_check_at_millis, next_update_check_at_millis FROM local_settings WHERE id = 'settings'",
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row
+            .map(|row| {
+                (
+                    row.try_get("last_update_check_at_millis").unwrap_or(None),
+                    row.try_get("next_update_check_at_millis").unwrap_or(None),
+                )
+            })
+            .unwrap_or((None, None)))
+    }
+
+    pub async fn save_update_timing(
+        &self,
+        last_checked_at_millis: i64,
+        next_check_at_millis: i64,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE local_settings SET last_update_check_at_millis = ?, next_update_check_at_millis = ? WHERE id = 'settings'",
+        )
+        .bind(last_checked_at_millis)
+        .bind(next_check_at_millis)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn save_snapshot(&self, snapshot: &AppSnapshot) -> Result<(), AppError> {
@@ -239,7 +383,7 @@ impl SqliteRepository {
         let dock_actions = serde_json::to_string(&snapshot.settings.dock.actions)
             .map_err(|error| AppError::Database(error.to_string()))?;
         sqlx::query(
-            "INSERT INTO local_settings (id, dark_theme, dock_plus_placement, dock_actions_json, never_show_update_dialog, future_sync_enabled, language_mode) VALUES ('settings', ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET dark_theme = excluded.dark_theme, dock_plus_placement = excluded.dock_plus_placement, dock_actions_json = excluded.dock_actions_json, never_show_update_dialog = excluded.never_show_update_dialog, future_sync_enabled = excluded.future_sync_enabled, language_mode = excluded.language_mode",
+            "INSERT INTO local_settings (id, dark_theme, dock_plus_placement, dock_actions_json, never_show_update_dialog, future_sync_enabled, language_mode, autostart_enabled, automatic_update_check_enabled, enhanced_xhigh_alarm_enabled) VALUES ('settings', ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET dark_theme = excluded.dark_theme, dock_plus_placement = excluded.dock_plus_placement, dock_actions_json = excluded.dock_actions_json, never_show_update_dialog = excluded.never_show_update_dialog, future_sync_enabled = excluded.future_sync_enabled, language_mode = excluded.language_mode, autostart_enabled = excluded.autostart_enabled, automatic_update_check_enabled = excluded.automatic_update_check_enabled, enhanced_xhigh_alarm_enabled = excluded.enhanced_xhigh_alarm_enabled",
         )
         .bind(i64::from(snapshot.settings.dark_theme))
         .bind(placement_name(snapshot.settings.dock.plus_placement))
@@ -247,6 +391,13 @@ impl SqliteRepository {
         .bind(i64::from(snapshot.settings.never_show_update_dialog))
         .bind(i64::from(snapshot.settings.future_sync_enabled))
         .bind(snapshot.settings.language_mode.sync_value())
+        .bind(i64::from(snapshot.settings.autostart_enabled))
+        .bind(i64::from(
+            snapshot.settings.automatic_update_check_enabled,
+        ))
+        .bind(i64::from(
+            snapshot.settings.enhanced_xhigh_alarm_enabled,
+        ))
         .execute(&mut *transaction)
         .await?;
 

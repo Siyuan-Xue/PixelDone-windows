@@ -12,6 +12,7 @@ import type {
   TodoItem,
   TodoPriority,
   SyncConflictView
+  ,StorageInfo
 } from '$lib/generated/ipc';
 
 declare global {
@@ -35,11 +36,14 @@ let browserSnapshot: AppSnapshot = {
     neverShowUpdateDialog: false,
     futureSyncEnabled: false,
     languageMode: 'SYSTEM'
+    ,autostartEnabled: true
+    ,automaticUpdateCheckEnabled: true
+    ,enhancedXhighAlarmEnabled: false
   },
   auth: { cloudAvailable: true, signedIn: false, userId: null, userEmail: null, insecureHttp: true },
   sync: { state: 'SIGNED_OUT', message: '浏览器预览模式', remoteVersion: null, pendingCount: 0, conflictCount: 0, insecureHttp: true },
-  reminder: { state: 'IDLE', activeTodoIds: [], lastFiredAtMillis: null },
-  update: { state: 'CURRENT', currentVersion: '3.1.0', availableVersion: null, downloadUrl: null, source: 'preview', message: null },
+  reminder: { state: 'IDLE', activeTodoIds: [], lastFiredAtMillis: null, scheduledCount: 0, scheduleHorizonAtMillis: null, scheduleTruncated: false, message: null },
+  update: { state: 'CURRENT', currentVersion: '3.1.1', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
   checklists: [
     {
       id: 'main',
@@ -400,6 +404,29 @@ export const api = {
   },
   async installUpdate(): Promise<void> {
     return invoke('download_and_install_update');
+  },
+  async getStorageInfo(): Promise<StorageInfo> {
+    if (isTauri()) return invoke('get_storage_info');
+    return {
+      executablePath: 'browser-preview/PixelDone.exe',
+      installDirectory: 'browser-preview',
+      dataRoot: 'browser-preview/data',
+      databasePath: 'browser-preview/data/pixeldone.sqlite3',
+      attachmentsPath: 'browser-preview/attachments',
+      cachePath: 'browser-preview/cache',
+      logsPath: 'browser-preview/logs',
+      webviewDataPath: 'browser-preview/EBWebView',
+      totalBytes: 0,
+      legacyRoamingDatabasePath: null,
+      legacyRoamingDatabaseBytes: null,
+      credentialManagerTarget: 'com.milesxue.pixeldone.windows/supabase-session'
+    };
+  },
+  async openDataFolder(): Promise<void> {
+    if (isTauri()) return invoke('open_data_folder');
+  },
+  async deleteLegacyRoamingData(confirmed: boolean): Promise<void> {
+    if (isTauri()) return invoke('delete_legacy_roaming_data', { confirmed });
   },
   async stopReminder(expectedRevision: number, todoIds: string[]): Promise<MutationResult> {
     return invoke('stop_reminder', { expectedRevision, todoIds });

@@ -34,9 +34,9 @@
 | TRASH-RESTORE-001 | trash | 恢复任务并重建来源清单 | 是 | verified | none |
 | TRASH-PURGE-001 | trash | 永久删除和 tombstone | 是 | verified | none |
 | IMAGE-LOCAL-001 | image | 单张本地图片添加、预览、替换、删除、缩放和平移 | 是 | verified | none |
-| REMINDER-NORMAL-001 | reminder | 普通 Windows 通知提醒 | 是 | verified | platform-equivalent: Windows toast |
-| REMINDER-XHIGH-001 | reminder | XHIGH 独立强提醒窗口 | 是 | verified | platform-equivalent: always-on-top alarm window |
-| REMINDER-BATCH-001 | reminder | 同时间批处理、STOP 与 SNOOZE | 是 | verified | none |
+| REMINDER-NORMAL-001 | reminder | 普通 Windows 通知提醒 | 是 | verified | platform-equivalent: installed Windows Scheduled Toast with protocol activation |
+| REMINDER-XHIGH-001 | reminder | XHIGH 可选增强提醒 | 是 | verified | platform-equivalent: standard toast by default; local opt-in Windows alarm scenario for XHIGH |
+| REMINDER-BATCH-001 | reminder | 同时间批处理、STOP 与 SNOOZE | 是 | verified | platform-equivalent: grouped Scheduled Toast protocol actions without an intrusive application window |
 | REMINDER-RECONCILE-001 | reminder | 开机、睡眠恢复和系统时间变化校正 | 是 | verified | platform-equivalent: autostart plus periodic reconciliation |
 | SETTINGS-THEME-001 | settings | 浅色与深色主题 | 是 | verified | none |
 | SETTINGS-DOCK-001 | settings | Dock 位置与最多四动作配置 | 是 | verified | none |
@@ -44,11 +44,11 @@
 | SETTINGS-CLOUD-ICONS-001 | settings | 登录、镜像登出与同步图标几何 | 是 | verified | none |
 | AUTH-001 | auth | 注册、登录、退出与密码重置 | 是 | verified | none |
 | CREDENTIAL-001 | auth | 凭据安全存储 | 是 | verified | platform-equivalent: Windows Credential Manager |
-| SYNC-MANUAL-001 | sync | 手动与自动同步 | 是 | verified | platform-equivalent: mutation-triggered debounce plus 30-second recovery polling |
+| SYNC-MANUAL-001 | sync | 手动与自动同步 | 是 | verified | platform-equivalent: event-driven Realtime invalidation plus transactional pull; no fixed-interval polling |
 | SYNC-CAS-001 | sync | 原子 mutation、CAS、change feed 与 schema negotiation | 是 | verified | none |
 | SYNC-CONFLICT-001 | sync | 冲突记录、字段差异与 LOCAL/CLOUD 审查 | 是 | verified | none |
 | SYNC-IMAGE-LOCAL-001 | sync | 两端图片严格本地且不影响其他字段同步 | 是 | verified | intentional shared exclusion: no Supabase Storage |
-| SYNC-HTTP-001 | sync | 指定 Supabase endpoint 的长期 HTTP 正式策略 | 是 | verified | accepted insecure transport risk; no HTTPS migration |
+| SYNC-HTTP-001 | sync | 指定 Supabase endpoint 的长期 HTTP 正式策略 | 是 | verified | accepted insecure HTTP/ws transport risk; no HTTPS migration |
 | UPDATE-SOURCE-001 | update | GitHub 优先与 Gitee 回退 | 是 | verified | none |
 | UPDATE-CHANNEL-001 | update | stable 与 beta/RC 独立应用标识和清单 | 是 | verified | none |
 | WINDOWS-TRAY-001 | platform | 托盘常驻、关闭隐藏、单实例与开机启动 | 是 | verified | platform-equivalent: Windows tray/autostart/single-instance |

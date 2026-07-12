@@ -16,6 +16,7 @@ pub async fn auth_sign_in(
     let session = state.cloud.sign_in(&email, &password).await?;
     state.credentials.save(&session)?;
     *state.session.lock().await = Some(session.clone());
+    state.auth_notify.notify_one();
     let auth = state.cloud.auth_view(Some(&session));
     mutate(state, expected_revision, move |snapshot| {
         snapshot.auth = auth;
@@ -41,6 +42,7 @@ pub async fn auth_sign_up(
     let session = state.cloud.sign_up(&email, &password).await?;
     state.credentials.save(&session)?;
     *state.session.lock().await = Some(session.clone());
+    state.auth_notify.notify_one();
     let auth = state.cloud.auth_view(Some(&session));
     mutate(state, expected_revision, move |snapshot| {
         snapshot.auth = auth;
@@ -60,7 +62,9 @@ pub async fn auth_sign_out(
     state: State<'_, ManagedAppState>,
     expected_revision: i64,
 ) -> Result<MutationResult, AppError> {
-    if let Some(session) = state.session.lock().await.take() {
+    let session = state.session.lock().await.take();
+    state.auth_notify.notify_one();
+    if let Some(session) = session {
         state.cloud.sign_out(&session).await?;
     }
     state.credentials.clear()?;

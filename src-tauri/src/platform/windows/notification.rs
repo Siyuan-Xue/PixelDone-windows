@@ -1,106 +1,144 @@
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use sha2::{Digest, Sha256};
 use windows::{
     Data::Xml::Dom::XmlDocument,
-    Foundation::TypedEventHandler,
-    UI::Notifications::{ToastActivatedEventArgs, ToastNotification, ToastNotificationManager},
-    core::{HSTRING, Interface},
-};
-
-use crate::{
-    application::{
-        commands::reminder::{snooze_reminder, stop_reminder},
-        state::ManagedAppState,
+    Foundation::DateTime,
+    UI::Notifications::{
+        NotificationSetting, ScheduledToastNotification, ToastNotificationManager, ToastNotifier,
     },
-    domain::AppError,
+    core::HSTRING,
 };
 
-pub fn show_toast(
-    app: &AppHandle,
-    todo_ids: &[String],
-    title: &str,
-    body: &str,
-) -> Result<(), AppError> {
-    let xml = XmlDocument::new().map_err(platform_error)?;
-    let payload = toast_xml(title, body);
-    xml.LoadXml(&HSTRING::from(payload))
+use crate::{domain::AppError, infrastructure::reminder::ReminderOccurrence};
+
+pub const APP_USER_MODEL_ID: &str = "com.milesxue.pixeldone.windows";
+const REMINDER_GROUP: &str = "pixeldone-reminders";
+const WINDOWS_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
+
+pub fn replace_scheduled_toasts(occurrences: &[ReminderOccurrence]) -> Result<usize, AppError> {
+    let notifier = notification_notifier()?;
+    let existing = notifier
+        .GetScheduledToastNotifications()
         .map_err(platform_error)?;
-    let toast = ToastNotification::CreateToastNotification(&xml).map_err(platform_error)?;
-    register_action_handler(&toast, app, todo_ids)?;
-    let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
-        "com.milesxue.pixeldone.windows",
-    ))
-    .map_err(platform_error)?;
-    notifier.Show(&toast).map_err(platform_error)
-}
-
-fn toast_xml(title: &str, body: &str) -> String {
-    format!(
-        "<toast><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text></binding></visual><actions><action content=\"STOP\" arguments=\"stop\" activationType=\"foreground\"/><action content=\"SNOOZE 10 MIN\" arguments=\"snooze\" activationType=\"foreground\"/></actions><audio src=\"ms-winsoundevent:Notification.Default\"/></toast>",
-        escape_xml(title),
-        escape_xml(body),
-    )
-}
-
-fn register_action_handler(
-    toast: &ToastNotification,
-    app: &AppHandle,
-    todo_ids: &[String],
-) -> Result<(), AppError> {
-    let app = app.clone();
-    let todo_ids = todo_ids.to_vec();
-    toast
-        .Activated(&TypedEventHandler::<
-            ToastNotification,
-            windows::core::IInspectable,
-        >::new(move |_, args| {
-            let action = args
-                .as_ref()
-                .and_then(|value| value.cast::<ToastActivatedEventArgs>().ok())
-                .and_then(|value| value.Arguments().ok())
-                .map(|value| value.to_string())
-                .unwrap_or_default();
-            if action != "stop" && action != "snooze" {
-                return Ok(());
-            }
-            let app = app.clone();
-            let todo_ids = todo_ids.clone();
-            tauri::async_runtime::spawn(async move {
-                let state = app.state::<ManagedAppState>();
-                let revision = state.inner.lock().await.snapshot.revision;
-                if action == "snooze" {
-                    let _ = snooze_reminder(app.clone(), state, revision, todo_ids).await;
-                } else {
-                    let _ = stop_reminder(app.clone(), state, revision, todo_ids).await;
-                }
-            });
-            Ok(())
-        }))
-        .map(|_| ())
-        .map_err(platform_error)
-}
-
-pub fn show_xhigh_window(app: &AppHandle, todo_ids: &[String]) -> Result<(), AppError> {
-    let query = todo_ids.join(",");
-    if let Some(window) = app.get_webview_window("xhigh-alarm") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = window.set_always_on_top(true);
-        return Ok(());
+    let size = existing.Size().map_err(platform_error)?;
+    for index in 0..size {
+        let scheduled = existing.GetAt(index).map_err(platform_error)?;
+        if scheduled
+            .Group()
+            .map(|group| group == REMINDER_GROUP)
+            .unwrap_or(false)
+        {
+            notifier
+                .RemoveFromSchedule(&scheduled)
+                .map_err(platform_error)?;
+        }
     }
-    WebviewWindowBuilder::new(
-        app,
-        "xhigh-alarm",
-        WebviewUrl::App(format!("alarm?todoIds={query}").into()),
+
+    for occurrence in occurrences {
+        let xml = XmlDocument::new().map_err(platform_error)?;
+        xml.LoadXml(&HSTRING::from(scheduled_toast_xml(occurrence)))
+            .map_err(platform_error)?;
+        let delivery = DateTime {
+            UniversalTime: occurrence
+                .delivery_at_millis
+                .saturating_mul(10_000)
+                .saturating_add(WINDOWS_EPOCH_TICKS),
+        };
+        let toast = ScheduledToastNotification::CreateScheduledToastNotification(&xml, delivery)
+            .map_err(platform_error)?;
+        toast
+            .SetTag(&HSTRING::from(schedule_tag(occurrence)))
+            .map_err(platform_error)?;
+        toast
+            .SetGroup(&HSTRING::from(REMINDER_GROUP))
+            .map_err(platform_error)?;
+        notifier.AddToSchedule(&toast).map_err(platform_error)?;
+    }
+    Ok(occurrences.len())
+}
+
+pub fn schedule_snoozed_toast(occurrence: &ReminderOccurrence) -> Result<(), AppError> {
+    let notifier = notification_notifier()?;
+    let xml = XmlDocument::new().map_err(platform_error)?;
+    xml.LoadXml(&HSTRING::from(scheduled_toast_xml(occurrence)))
+        .map_err(platform_error)?;
+    let toast = ScheduledToastNotification::CreateScheduledToastNotification(
+        &xml,
+        DateTime {
+            UniversalTime: occurrence
+                .delivery_at_millis
+                .saturating_mul(10_000)
+                .saturating_add(WINDOWS_EPOCH_TICKS),
+        },
     )
-    .title("PixelDone XHIGH")
-    .inner_size(520.0, 360.0)
-    .min_inner_size(480.0, 320.0)
-    .center()
-    .always_on_top(true)
-    .focused(true)
-    .build()
-    .map_err(|error| AppError::Platform(error.to_string()))?;
-    Ok(())
+    .map_err(platform_error)?;
+    toast
+        .SetTag(&HSTRING::from(schedule_tag(occurrence)))
+        .map_err(platform_error)?;
+    toast
+        .SetGroup(&HSTRING::from(REMINDER_GROUP))
+        .map_err(platform_error)?;
+    notifier.AddToSchedule(&toast).map_err(platform_error)
+}
+
+fn notification_notifier() -> Result<ToastNotifier, AppError> {
+    let notifier =
+        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(APP_USER_MODEL_ID))
+            .map_err(platform_error)?;
+    let setting = notifier.Setting().map_err(platform_error)?;
+    if setting != NotificationSetting::Enabled {
+        return Err(AppError::NotificationsDisabled(notification_setting_name(
+            setting,
+        )));
+    }
+    Ok(notifier)
+}
+
+fn notification_setting_name(setting: NotificationSetting) -> String {
+    if setting == NotificationSetting::DisabledForApplication {
+        "Disabled for PixelDone in Windows Settings".to_owned()
+    } else if setting == NotificationSetting::DisabledForUser {
+        "Disabled for the current Windows user".to_owned()
+    } else if setting == NotificationSetting::DisabledByGroupPolicy {
+        "Disabled by Windows group policy".to_owned()
+    } else if setting == NotificationSetting::DisabledByManifest {
+        "Disabled by application registration".to_owned()
+    } else {
+        format!("Unknown Windows notification setting ({})", setting.0)
+    }
+}
+
+fn schedule_tag(occurrence: &ReminderOccurrence) -> String {
+    let digest = format!(
+        "{:x}",
+        Sha256::digest(format!(
+            "{}:{}",
+            occurrence.todo_id, occurrence.delivery_at_millis
+        ))
+    );
+    format!("pd-{}", &digest[..32])
+}
+
+fn scheduled_toast_xml(occurrence: &ReminderOccurrence) -> String {
+    let encoded_id =
+        url::form_urlencoded::byte_serialize(occurrence.todo_id.as_bytes()).collect::<String>();
+    let open = format!("pixeldone-reminder://open?todo={encoded_id}");
+    let stop = format!("pixeldone-reminder://stop?todo={encoded_id}");
+    let snooze = format!("pixeldone-reminder://snooze?todo={encoded_id}");
+    let (scenario, audio) = if occurrence.enhanced_alarm {
+        (
+            " scenario=\"alarm\"",
+            "<audio src=\"ms-winsoundevent:Notification.Looping.Alarm2\" loop=\"true\"/>",
+        )
+    } else {
+        ("", "<audio src=\"ms-winsoundevent:Notification.Default\"/>")
+    };
+    format!(
+        "<toast{scenario} activationType=\"protocol\" launch=\"{}\"><visual><binding template=\"ToastGeneric\"><text>PixelDone</text><text>{}</text></binding></visual><actions><action content=\"STOP\" arguments=\"{}\" activationType=\"protocol\"/><action content=\"SNOOZE 10 MIN\" arguments=\"{}\" activationType=\"protocol\"/></actions>{audio}</toast>",
+        escape_xml(&open),
+        escape_xml(&occurrence.title),
+        escape_xml(&stop),
+        escape_xml(&snooze),
+    )
 }
 
 fn escape_xml(value: &str) -> String {
@@ -121,10 +159,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn toast_xml_escapes_user_titles() {
+    fn scheduled_toast_xml_escapes_user_titles() {
         assert_eq!(escape_xml("A & <B>"), "A &amp; &lt;B&gt;");
-        let xml = toast_xml("A & <B>", "task");
-        assert!(xml.contains("arguments=\"stop\""));
-        assert!(xml.contains("arguments=\"snooze\""));
+        let xml = scheduled_toast_xml(&ReminderOccurrence {
+            todo_id: "task".into(),
+            title: "A & <B>".into(),
+            priority: crate::domain::TodoPriority::Medium,
+            delivery_at_millis: 1,
+            enhanced_alarm: false,
+        });
+        assert!(xml.contains("A &amp; &lt;B&gt;"));
+        assert!(xml.contains("pixeldone-reminder://stop"));
+        assert!(xml.contains("pixeldone-reminder://snooze"));
+    }
+
+    #[test]
+    fn xhigh_uses_standard_notification_when_enhancement_is_disabled() {
+        let xml = scheduled_toast_xml(&ReminderOccurrence {
+            todo_id: "a&b".into(),
+            title: "Wake <now>".into(),
+            priority: crate::domain::TodoPriority::Xhigh,
+            delivery_at_millis: 1,
+            enhanced_alarm: false,
+        });
+        assert!(!xml.contains("scenario=\"alarm\""));
+        assert!(!xml.contains("Notification.Looping.Alarm2"));
+        assert!(xml.contains("Notification.Default"));
+        assert!(xml.contains("activationType=\"protocol\""));
+    }
+
+    #[test]
+    fn enhanced_xhigh_uses_alarm_scenario_and_protocol_actions() {
+        let xml = scheduled_toast_xml(&ReminderOccurrence {
+            todo_id: "a&b".into(),
+            title: "Wake <now>".into(),
+            priority: crate::domain::TodoPriority::Xhigh,
+            delivery_at_millis: 1,
+            enhanced_alarm: true,
+        });
+        assert!(xml.contains("scenario=\"alarm\""));
+        assert!(xml.contains("Notification.Looping.Alarm2"));
+        assert!(xml.contains("activationType=\"protocol\""));
+        assert!(xml.contains("a%26b"));
     }
 }

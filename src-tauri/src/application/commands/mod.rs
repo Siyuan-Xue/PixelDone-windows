@@ -1,4 +1,5 @@
 use tauri::State;
+use tauri_plugin_autostart::ManagerExt;
 use uuid::Uuid;
 
 use crate::{
@@ -14,6 +15,7 @@ use crate::{
 pub mod auth;
 pub mod image;
 pub mod reminder;
+pub mod storage;
 pub mod sync;
 pub mod update;
 
@@ -41,6 +43,7 @@ where
     let snapshot_delta = SnapshotDelta::between(&before, &candidate);
     runtime.snapshot = candidate;
     state.sync_notify.notify_one();
+    state.reminder_notify.notify_one();
 
     Ok(MutationResult {
         revision: runtime.snapshot.revision,
@@ -471,10 +474,20 @@ pub async fn set_deadline_countdown(
 
 #[tauri::command]
 pub async fn update_settings(
+    app: tauri::AppHandle,
     state: State<'_, ManagedAppState>,
     expected_revision: i64,
     settings: AppSettings,
 ) -> Result<MutationResult, AppError> {
+    let previous_autostart = state.inner.lock().await.snapshot.settings.autostart_enabled;
+    if previous_autostart != settings.autostart_enabled {
+        let result = if settings.autostart_enabled {
+            app.autolaunch().enable()
+        } else {
+            app.autolaunch().disable()
+        };
+        result.map_err(|error| AppError::Platform(error.to_string()))?;
+    }
     mutate(state, expected_revision, |snapshot| {
         snapshot.settings = AppSettings {
             dock: settings.dock.normalized(),

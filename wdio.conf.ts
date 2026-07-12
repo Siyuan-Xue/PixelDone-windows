@@ -14,13 +14,13 @@ export const config: Options.Testrunner = {
   maxInstances: 1,
   services: [['@wdio/tauri-service', {
     driverProvider: 'embedded',
-    appBinaryPath: './src-tauri/target/debug/pixeldone-windows.exe',
+    appBinaryPath: './src-tauri/target/debug/PixelDone.exe',
     embeddedStartupTimeout: 60_000
   }]],
   capabilities: [{
     browserName: 'tauri',
     'tauri:options': {
-      application: './src-tauri/target/debug/pixeldone-windows.exe'
+      application: './src-tauri/target/debug/PixelDone.exe'
     }
   }],
   logLevel: 'info',

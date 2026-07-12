@@ -1,6 +1,6 @@
 {
   "name": "pixeldone-windows",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "Rust-first Windows client for PixelDone",
   "type": "module",
   "private": true,

@@ -102,6 +102,10 @@ pub struct UpdateView {
     pub download_url: Option<String>,
     pub source: Option<String>,
     pub message: Option<String>,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub last_checked_at_millis: Option<i64>,
+    pub next_check_at_millis: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,4 +114,8 @@ pub struct ReminderRunView {
     pub state: String,
     pub active_todo_ids: Vec<String>,
     pub last_fired_at_millis: Option<i64>,
+    pub scheduled_count: usize,
+    pub schedule_horizon_at_millis: Option<i64>,
+    pub schedule_truncated: bool,
+    pub message: Option<String>,
 }

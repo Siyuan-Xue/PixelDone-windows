@@ -52,6 +52,24 @@ export interface AppSettings {
   neverShowUpdateDialog: boolean;
   futureSyncEnabled: boolean;
   languageMode: AppLanguage;
+  autostartEnabled: boolean;
+  automaticUpdateCheckEnabled: boolean;
+  enhancedXhighAlarmEnabled: boolean;
+}
+
+export interface StorageInfo {
+  executablePath: string;
+  installDirectory: string;
+  dataRoot: string;
+  databasePath: string;
+  attachmentsPath: string;
+  cachePath: string;
+  logsPath: string;
+  webviewDataPath: string;
+  totalBytes: number;
+  legacyRoamingDatabasePath: string | null;
+  legacyRoamingDatabaseBytes: number | null;
+  credentialManagerTarget: string;
 }
 
 export interface AuthView {
@@ -85,6 +103,10 @@ export interface ReminderRunView {
   state: string;
   activeTodoIds: string[];
   lastFiredAtMillis: number | null;
+  scheduledCount: number;
+  scheduleHorizonAtMillis: number | null;
+  scheduleTruncated: boolean;
+  message: string | null;
 }
 
 export interface UpdateView {
@@ -94,6 +116,10 @@ export interface UpdateView {
   downloadUrl: string | null;
   source: string | null;
   message: string | null;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  lastCheckedAtMillis: number | null;
+  nextCheckAtMillis: number | null;
 }
 
 export interface AppSnapshot {

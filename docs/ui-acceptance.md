@@ -17,7 +17,7 @@
 - Settings。
 - Conflict Center。
 - Image Preview。
-- XHIGH alarm window。
+- 默认 XHIGH 标准 Windows 通知、主动开启后的 XHIGH 增强闹钟，以及系统通知禁用/身份注册失败状态。
 - Offline、同步错误、更新可用。
 
 ## 发布判断

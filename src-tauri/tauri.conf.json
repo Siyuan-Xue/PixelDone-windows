@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PixelDone",
-  "version": "3.1.0",
+  "version": "3.1.1",
+  "mainBinaryName": "PixelDone",
   "identifier": "com.milesxue.pixeldone.windows",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -32,7 +33,8 @@
     "targets": ["nsis"],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico"
       }
     },
     "icon": [
@@ -43,6 +45,11 @@
     ]
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["pixeldone-reminder"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE5RkYzNThCRjlGM0NCMjEKUldRaHkvUDVpelgvcVhvQVNFTmMzeHVDRmpVL2RZUGNoTXZwaEVxR21JOGEvNzBSWWIwYllEejcK",
       "endpoints": [

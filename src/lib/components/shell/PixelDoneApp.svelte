@@ -15,6 +15,7 @@
     DockPlusPlacement,
     MutationResult,
     SortMode,
+    StorageInfo,
     SyncConflictView,
     TodoDraft,
     TodoItem,
@@ -54,6 +55,8 @@
   let previewY = $state(0);
   let draggingPreview = $state(false);
   let dragStart = $state({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
+  let storageInfo = $state<StorageInfo | null>(null);
+  let updateProgress = $state<{ downloadedBytes: number; totalBytes: number | null } | null>(null);
 
   let selectedList = $derived(
     snapshot?.checklists.find((list) => list.id === snapshot?.selectedChecklistId) ?? null
@@ -81,16 +84,29 @@
     { value: 'SPANISH', label: 'Español' }
   ];
   const allDockActions: DockAction[] = ['SORT', 'DEADLINE', 'HIDE_DONE', 'DELETE_DONE', 'BATCH_DELETE'];
+  const enhancedAlarmTranslations: Record<string, { title: string; description: string }> = {
+    en: { title: 'Enhanced XHIGH alarm', description: 'Off by default. XHIGH uses a normal Windows notification unless you enable the persistent alarm.' },
+    'zh-Hans': { title: '增强 XHIGH 闹钟', description: '默认关闭。关闭时 XHIGH 与其他任务一样使用普通 Windows 通知。' },
+    ar: { title: 'منبّه XHIGH المحسّن', description: 'متوقف افتراضيًا. يستخدم XHIGH إشعار Windows عاديًا ما لم تفعّل المنبّه المستمر.' },
+    fr: { title: 'Alarme XHIGH renforcée', description: 'Désactivée par défaut. XHIGH utilise une notification Windows normale sauf si vous activez l’alarme persistante.' },
+    ru: { title: 'Усиленный будильник XHIGH', description: 'По умолчанию выключен. XHIGH использует обычное уведомление Windows, пока вы не включите постоянный будильник.' },
+    es: { title: 'Alarma XHIGH mejorada', description: 'Desactivada de forma predeterminada. XHIGH usa una notificación normal de Windows salvo que actives la alarma persistente.' }
+  };
+  let enhancedAlarmCopy = $derived(enhancedAlarmTranslations[locale] ?? enhancedAlarmTranslations.en);
 
   onMount(() => {
     const cleanups: Array<() => void> = [];
     void (async () => {
       try {
         snapshot = await api.bootstrap();
+        storageInfo = await api.getStorageInfo();
         applyPresentationSettings();
         cleanups.push(await listen<MutationResult>('snapshot://delta', ({ payload }) => {
           snapshot = applyMutation(snapshot, payload);
           applyPresentationSettings();
+        }));
+        cleanups.push(await listen<{ downloadedBytes: number; totalBytes: number | null }>('update://progress', ({ payload }) => {
+          updateProgress = payload;
         }));
       } catch (error) {
         errorMessage = errorText(error);
@@ -103,6 +119,23 @@
 
   function t(key: MessageKey): string {
     return message(locale, key);
+  }
+
+  function localCopy(english: string, chinese: string): string {
+    return locale === 'zh-Hans' ? chinese : english;
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  async function deleteLegacyData(): Promise<void> {
+    if (!storageInfo?.legacyRoamingDatabasePath) return;
+    if (!confirm(localCopy('Delete the legacy Roaming database? The active Local database is not affected.', '删除旧版 Roaming 数据库？当前 Local 数据库不会受影响。'))) return;
+    await api.deleteLegacyRoamingData(true);
+    storageInfo = await api.getStorageInfo();
   }
 
   function applyPresentationSettings(): void {
@@ -523,8 +556,29 @@
 
           <section>
             <span class="section-label">{t('settings_updates')}</span>
-            <div class="setting-row"><div><strong>{t('current_version')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS</p></div><button class="quiet-button" onclick={() => void commit(api.checkForUpdate(snapshot.revision))}>{t('check_update')}</button></div>
-            {#if snapshot.update.state === 'AVAILABLE'}<button class="primary-button" onclick={() => void api.installUpdate()}>{t('install_updates')} {snapshot.update.availableVersion}</button>{/if}
+            <div class="setting-row"><div><strong>{localCopy('Automatic update checks', '自动检查更新')}</strong><p>{localCopy('Checks only. Downloads and installation always require your click.', '仅自动检查；下载和安装始终需要你手动确认。')}</p></div><button aria-label={localCopy('Automatic update checks', '自动检查更新')} class:active={snapshot.settings.automaticUpdateCheckEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, automaticUpdateCheckEnabled: !snapshot.settings.automaticUpdateCheckEnabled })}><span></span></button></div>
+            <div class="setting-row"><div><strong>{localCopy('Current version', '当前版本')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS{#if snapshot.update.message} · {snapshot.update.message}{/if}</p></div><button class="quiet-button" onclick={() => void commit(api.checkForUpdate(snapshot.revision))}>{t('check_update')}</button></div>
+            {#if snapshot.update.state === 'AVAILABLE'}<button class="primary-button" onclick={() => { updateProgress = { downloadedBytes: 0, totalBytes: null }; void api.installUpdate(); }}>{t('install_updates')} {snapshot.update.availableVersion}</button>{/if}
+            {#if updateProgress}<p class="update-progress">{localCopy('Downloading', '正在下载')} {formatBytes(updateProgress.downloadedBytes)}{#if updateProgress.totalBytes} / {formatBytes(updateProgress.totalBytes)}{/if}</p>{/if}
+          </section>
+
+          <section>
+            <span class="section-label">{localCopy('Windows integration', 'Windows 集成')}</span>
+            <div class="setting-row"><div><strong>{localCopy('Start with Windows', '开机启动')}</strong><p>{localCopy('Starts minimized so scheduled reminders stay refreshed.', '以最小化方式启动，用于持续刷新系统提醒。')}</p></div><button aria-label={localCopy('Start with Windows', '开机启动')} class:active={snapshot.settings.autostartEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, autostartEnabled: !snapshot.settings.autostartEnabled })}><span></span></button></div>
+            <div class="setting-row"><div><strong>{enhancedAlarmCopy.title}</strong><p>{enhancedAlarmCopy.description}</p></div><button aria-label={enhancedAlarmCopy.title} class:active={snapshot.settings.enhancedXhighAlarmEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, enhancedXhighAlarmEnabled: !snapshot.settings.enhancedXhighAlarmEnabled })}><span></span></button></div>
+            <div class="setting-row"><div><strong>{localCopy('Windows reminder queue', 'Windows 提醒队列')}</strong><p>{snapshot.reminder.scheduledCount} · {snapshot.reminder.state}{#if snapshot.reminder.message} · {snapshot.reminder.message}{/if}</p></div></div>
+          </section>
+
+          <section>
+            <span class="section-label">{localCopy('Storage & privacy', '存储与隐私')}</span>
+            {#if storageInfo}
+              <div class="setting-row storage-row"><div><strong>{localCopy('Application', '应用程序')}</strong><p><code>{storageInfo.executablePath}</code></p></div></div>
+              <div class="setting-row storage-row"><div><strong>{localCopy('Local data', '本地数据')}</strong><p><code>{storageInfo.dataRoot}</code> · {formatBytes(storageInfo.totalBytes)}</p></div><button class="quiet-button" onclick={() => void api.openDataFolder()}>{localCopy('Open folder', '打开目录')}</button></div>
+              <div class="setting-row storage-row"><div><strong>SQLite</strong><p><code>{storageInfo.databasePath}</code></p></div></div>
+              <div class="setting-row storage-row"><div><strong>WebView2</strong><p><code>{storageInfo.webviewDataPath}</code></p></div></div>
+              <div class="setting-row storage-row"><div><strong>Windows Credential Manager</strong><p><code>{storageInfo.credentialManagerTarget}</code></p></div></div>
+              {#if storageInfo.legacyRoamingDatabasePath}<div class="setting-row storage-row"><div><strong>{localCopy('Legacy data found', '发现旧版数据')}</strong><p><code>{storageInfo.legacyRoamingDatabasePath}</code> · {formatBytes(storageInfo.legacyRoamingDatabaseBytes ?? 0)}</p></div><button class="danger-button" onclick={() => void deleteLegacyData()}>{t('delete')}</button></div>{/if}
+            {/if}
           </section>
         </div>
       {/if}

@@ -17,6 +17,8 @@ pub enum AppError {
     Auth(String),
     #[error("Windows 系统操作失败：{0}")]
     Platform(String),
+    #[error("Windows 通知已禁用：{0}")]
+    NotificationsDisabled(String),
     #[error("更新操作失败：{0}")]
     Update(String),
     #[error("应用初始化失败：{0}")]
@@ -33,6 +35,7 @@ impl AppError {
             Self::Network(_) => "NETWORK_ERROR",
             Self::Auth(_) => "AUTH_ERROR",
             Self::Platform(_) => "PLATFORM_ERROR",
+            Self::NotificationsDisabled(_) => "NOTIFICATIONS_DISABLED",
             Self::Update(_) => "UPDATE_ERROR",
             Self::Initialization(_) => "INITIALIZATION_ERROR",
         }

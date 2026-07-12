@@ -53,12 +53,14 @@ pub async fn sync_now(
                 ..runtime.snapshot.sync.clone()
             };
             repository.save_snapshot(&runtime.snapshot).await?;
+            state.reminder_notify.notify_one();
             return Err(error);
         }
     }
     runtime.snapshot.auth = state.cloud.auth_view(Some(&session));
     repository.save_snapshot(&runtime.snapshot).await?;
     let snapshot_delta = SnapshotDelta::between(&before, &runtime.snapshot);
+    state.reminder_notify.notify_one();
     Ok(MutationResult {
         revision: runtime.snapshot.revision,
         changed_ids: vec!["sync".to_owned()],

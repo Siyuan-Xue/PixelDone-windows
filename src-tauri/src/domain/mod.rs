@@ -23,7 +23,7 @@ pub const TRASH_CHECKLIST_NAME: &str = "TRASH";
 pub const SETTINGS_CHECKLIST_ID: &str = "settings";
 pub const SETTINGS_CHECKLIST_NAME: &str = "SETTINGS";
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub dark_theme: bool,
@@ -31,6 +31,41 @@ pub struct AppSettings {
     pub never_show_update_dialog: bool,
     pub future_sync_enabled: bool,
     pub language_mode: AppLanguage,
+    pub autostart_enabled: bool,
+    pub automatic_update_check_enabled: bool,
+    pub enhanced_xhigh_alarm_enabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageInfo {
+    pub executable_path: String,
+    pub install_directory: String,
+    pub data_root: String,
+    pub database_path: String,
+    pub attachments_path: String,
+    pub cache_path: String,
+    pub logs_path: String,
+    pub webview_data_path: String,
+    pub total_bytes: u64,
+    pub legacy_roaming_database_path: Option<String>,
+    pub legacy_roaming_database_bytes: Option<u64>,
+    pub credential_manager_target: String,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            dark_theme: false,
+            dock: DockConfig::default(),
+            never_show_update_dialog: false,
+            future_sync_enabled: false,
+            language_mode: AppLanguage::default(),
+            autostart_enabled: true,
+            automatic_update_check_enabled: true,
+            enhanced_xhigh_alarm_enabled: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

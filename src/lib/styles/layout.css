@@ -70,6 +70,9 @@
 .settings-page section > .section-label { display: block; margin-bottom: 8px; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; min-height: 68px; gap: 20px; border-top: 1px solid var(--border); padding: 12px; background: var(--surface-raised); }
 .setting-row p { margin-top: 5px; color: var(--text-muted); font-size: 10px; line-height: 15px; }
+.storage-row > div { min-width: 0; }
+.storage-row code { overflow-wrap: anywhere; font-family: "Cascadia Mono", "Consolas", monospace; }
+.update-progress { margin: 10px 12px 0; color: var(--text-muted); font-size: 10px; }
 .setting-value { color: var(--text-secondary); font-size: 10px; }
 .setting-actions, .cloud-actions, .image-actions, .auth-buttons { display: flex; align-items: center; gap: 8px; }
 .cloud-icon-button { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); }

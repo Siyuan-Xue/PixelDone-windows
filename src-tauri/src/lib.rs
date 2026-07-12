@@ -5,12 +5,15 @@ pub mod platform;
 
 use application::{
     commands,
+    commands::update::start_automatic_update_checks,
     services::start_background_services,
     state::{AppPaths, ManagedAppState},
 };
 use domain::{AppError, AppSnapshot, SyncRunView, SyncState, unix_now_millis};
 use infrastructure::{auth::SupabaseClient, repository::SqliteRepository};
+use platform::windows::activation::route_arguments;
 use platform::windows::credentials::CredentialStore;
+use platform::windows::identity::ensure_notification_identity;
 use tauri::{
     Manager, WindowEvent,
     menu::{Menu, MenuItem},
@@ -20,10 +23,17 @@ use tauri_plugin_autostart::ManagerExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let notification_identity_error = std::env::current_exe()
+        .map_err(|error| AppError::Platform(error.to_string()))
+        .and_then(|path| ensure_notification_identity(&path))
+        .err()
+        .map(|error| error.to_string());
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            route_arguments(app, args);
             show_main_window(app);
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -41,7 +51,7 @@ pub fn run() {
         .plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
-        .setup(|app| {
+        .setup(move |app| {
             #[cfg(debug_assertions)]
             let root = std::env::var_os("PIXELDONE_DATA_ROOT")
                 .map(std::path::PathBuf::from)
@@ -53,6 +63,8 @@ pub fn run() {
                 attachments: root.join("attachments"),
                 cache: root.join("cache"),
                 logs: root.join("logs"),
+                webview_data: root.join("EBWebView"),
+                legacy_roaming_database: app.path().app_data_dir()?.join("pixeldone.sqlite3"),
                 root,
             };
             for path in [
@@ -65,6 +77,9 @@ pub fn run() {
                 std::fs::create_dir_all(path)?;
             }
             let database_path = paths.data.join("pixeldone.sqlite3");
+            if !database_path.exists() && paths.legacy_roaming_database.is_file() {
+                std::fs::copy(&paths.legacy_roaming_database, &database_path)?;
+            }
             let repository = tauri::async_runtime::block_on(SqliteRepository::open(&database_path))
                 .map_err(boxed_error)?;
             let mut snapshot = tauri::async_runtime::block_on(repository.load_snapshot())
@@ -92,8 +107,22 @@ pub fn run() {
                 insecure_http: true,
                 ..SyncRunView::default()
             };
+            if let Some(error) = &notification_identity_error {
+                snapshot.reminder.state = "IDENTITY_ERROR".to_owned();
+                snapshot.reminder.message = Some(error.clone());
+            }
             tauri::async_runtime::block_on(repository.save_snapshot(&snapshot))
                 .map_err(boxed_error)?;
+            let autostart_initialized =
+                tauri::async_runtime::block_on(repository.autostart_initialized())
+                    .map_err(boxed_error)?;
+            if !cfg!(debug_assertions) && !autostart_initialized {
+                if snapshot.settings.autostart_enabled {
+                    app.autolaunch().enable()?;
+                }
+                tauri::async_runtime::block_on(repository.mark_autostart_initialized())
+                    .map_err(boxed_error)?;
+            }
             app.manage(ManagedAppState::new(
                 snapshot,
                 repository,
@@ -101,7 +130,10 @@ pub fn run() {
                 credentials,
                 session,
                 paths,
+                notification_identity_error.clone(),
             ));
+
+            route_arguments(app.handle(), std::env::args());
 
             let show = MenuItem::with_id(app, "show", "打开 PixelDone", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -130,15 +162,13 @@ pub fn run() {
             }
             tray.build(app)?;
 
-            if !cfg!(debug_assertions) {
-                let _ = app.autolaunch().enable();
-            }
             if std::env::args().any(|argument| argument == "--minimized")
                 && let Some(window) = app.get_webview_window("main")
             {
                 let _ = window.hide();
             }
             start_background_services(app.handle().clone());
+            start_automatic_update_checks(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -181,6 +211,9 @@ pub fn run() {
             commands::image::load_todo_image_preview,
             commands::reminder::stop_reminder,
             commands::reminder::snooze_reminder,
+            commands::storage::get_storage_info,
+            commands::storage::open_data_folder,
+            commands::storage::delete_legacy_roaming_data,
             commands::update::check_for_update,
             commands::update::download_and_install_update,
         ])

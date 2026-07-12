@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "PixelDone main window capability",
-  "windows": ["main", "xhigh-alarm"],
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:allow-open",
