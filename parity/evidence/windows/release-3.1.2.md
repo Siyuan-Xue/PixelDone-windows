@@ -41,9 +41,12 @@
 - The local 3.1.2 validation installer completed with exit code 0 over that installation. The same uninstall identity (`PixelDone`), installation directory, executable name, and uninstall path were retained; the registry, file version, and product version changed in place to `3.1.2`.
 - No uninstall was required and no parallel application directory was created.
 
-## Remaining release acceptance
+## Formal release acceptance
 
-- Run the tagged GitHub Actions release workflow and confirm `tauri-action` no longer emits the misleading inline-JSON `--config` message.
-- Confirm shortcuts, protocol activation, notifications, updater behavior, and uninstall behavior against the protected CI artifact.
-- Validate the published Tauri `.sig` with the embedded public key and confirm the 3.1.2 `latest.json` download path after the workflow completes.
-- The user explicitly authorized creating and publishing the formal `v3.1.2` tag and GitHub Release after the gates pass.
+- GitHub Actions run `29213244302` completed successfully: parity gate in 1m14s and the protected release job in 11m18s.
+- The hosted build log contains `tauri build --bundles nsis --target "x86_64-pc-windows-msvc"` and `svelte-kit sync && vite build`; it contains neither the misleading inline-JSON `--config` message nor the missing `.svelte-kit/tsconfig.json` warning.
+- The public `v3.1.2` Release contains `PixelDone_3.1.2_x64-setup.exe`, its `.sig`, and `latest.json` with version `3.1.2` and non-empty update notes.
+- Formal installer size: `5,308,210` bytes. Formal SHA-256: `D2521F14364A10AE8F9ECDF23412CB87DCE1AD6C3711514C2007BCDC3F0D72A4`. Authenticode remains `NotSigned` by policy.
+- The downloaded formal installer and `.sig` passed `formal_nsis_signature_matches_embedded_public_key` using the public key embedded in the repository.
+- Installing the downloaded formal artifact over the validation installation returned exit code 0, retained the current-user `PixelDone` identity and `C:\Users\Miles\AppData\Local\PixelDone` path, reported file/product/registry version `3.1.2`, and retained the Start Menu shortcut.
+- Release URL: `https://github.com/Siyuan-Xue/PixelDone-windows/releases/tag/v3.1.2`.

@@ -34,6 +34,6 @@
 - [x] Sidebar-only checklist creation, task-only `+`, all three Dock plus placements, modal shortcut isolation, focus, and Esc
 - [x] Unsigned local x64 NSIS validation bundle
 - [x] Installed in-place upgrade from 3.1.1
-- [ ] Signed Tauri updater artifact and embedded-public-key verification
+- [x] Signed Tauri updater artifact and embedded-public-key verification
 
-The user authorized publishing the formal `v3.1.2` tag and GitHub Release after these gates pass. Authenticode remains intentionally disabled; the Tauri updater signature is produced by the protected GitHub Actions release job.
+The formal `v3.1.2` tag and GitHub Release were published after all gates passed. Authenticode remains intentionally disabled; the protected GitHub Actions release job produced the Tauri updater signature, and the downloaded artifact passed embedded-public-key verification.
