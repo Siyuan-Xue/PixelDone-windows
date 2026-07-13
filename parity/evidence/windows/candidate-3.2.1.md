@@ -17,3 +17,10 @@ PixelDone Windows 3.2.1 is a patch release for the desktop UI and Windows notifi
 - Generated `latest.json` reports version 3.2.1, the v3.2.1 GitHub installer URL, and the 420-character updater signature.
 - The installer remains `NotSigned` under Windows Authenticode, matching the documented project release posture; updater authenticity is provided by the verified Tauri signature.
 - Installed-notification display remains a manual post-install observation and is not represented as verified by the automated shortcut and toast-registration coverage.
+
+## Published release verification
+
+- GitHub Actions run `29263815905` completed successfully for source commit `e3e5f77e07eb332c629814bb10edf03d406d078f` and immutable tag `v3.2.1`.
+- The public, non-draft, non-prerelease `PixelDone v3.2.1` release was published on 2026-07-13 with four expected assets: the x64 NSIS installer, detached updater signature, SHA-256 file, and `latest.json`.
+- The cloud-built installer is 5,397,428 bytes with SHA-256 `349F2E852E32C5C3CB3F722F42944F55AC2A21CAB8AB5C0A3468946FDC7EB7AC`.
+- The uploaded SHA-256 file matches GitHub's installer asset digest exactly. The public `latest.json` reports version 3.2.1, the v3.2.1 installer URL, and a 420-character updater signature.
