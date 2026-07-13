@@ -4,7 +4,7 @@
   "windowsTarget": {
     "product": "PixelDone Windows",
     "version": "3.2.0",
-    "stage": "release_candidate",
+    "stage": "formal_release",
     "evidence": ["parity/evidence/windows/candidate-3.2.0.md"]
   },
   "rowOverrides": {
@@ -59,7 +59,7 @@
     {
       "id": "release-build-3.2.0",
       "rows": ["RELEASE-NSIS-001"],
-      "status": "in_progress",
+      "status": "verified",
       "windowsEvidence": ["parity/evidence/windows/candidate-3.2.0.md"]
     }
   ]

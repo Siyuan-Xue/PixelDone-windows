@@ -1,6 +1,6 @@
 # Windows 3.2.0 candidate verification evidence
 
-PixelDone Windows 3.2.0 source was pushed to `main`. On 2026-07-13, the operator explicitly authorized formal publication while the installed/two-device checks below remained incomplete.
+PixelDone Windows 3.2.0 source was pushed to `main` and the normal GitHub Release `v3.2.0` was published with the NSIS installer, updater signature, `latest.json`, and SHA-256 file. On 2026-07-13, the operator explicitly authorized formal publication while the installed/two-device checks below remained incomplete.
 
 - SQLite migration `0007_attachment_sync.sql` separates durable attachment transfer metadata from todo snapshot replacement and backfills existing local image markers.
 - Settings verifies the current password, updates it through Supabase Auth, requests global logout, clears Windows Credential Manager, and requires a fresh sign-in.

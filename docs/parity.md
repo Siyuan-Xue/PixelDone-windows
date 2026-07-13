@@ -2,16 +2,16 @@
 
 > 本文件由 `bun run parity:report` 从 `parity/pixeldone-3.2.0.yaml` 生成，请勿手工维护状态。
 
-Windows 目标：PixelDone Windows 3.2.0（release_candidate）。
+Windows 目标：PixelDone Windows 3.2.0（formal_release）。
 
 功能基线：PixelDone Android 3.1.0（versionCode 78，commit `63471218345f6a4efcdbbd32c2d4c42acb25491c`，Room v5）。
 
 - Required：42
-- Verified：35
-- In progress：7
+- Verified：36
+- In progress：6
 - Blocked：0
 - Not started：0
-- 完成率：83.33%
+- 完成率：85.71%
 
 | ID | 域 | 功能 | Release required | 状态 | 差异 |
 | --- | --- | --- | --- | --- | --- |
@@ -55,7 +55,7 @@ Windows 目标：PixelDone Windows 3.2.0（release_candidate）。
 | UPDATE-CHANNEL-001 | update | stable 与 beta/RC 独立应用标识和清单 | 是 | verified | none |
 | WINDOWS-TRAY-001 | platform | 托盘常驻、关闭隐藏、单实例与开机启动 | 是 | verified | platform-equivalent: Windows tray/autostart/single-instance |
 | DATABASE-PATH-001 | storage | 官方 LocalAppData 分目录、SQLite 重启恢复与卸载保留 | 是 | verified | platform-equivalent local databases; no shared SQLite file |
-| RELEASE-NSIS-001 | release | Windows x64 NSIS、SHA-256 与 Tauri updater signature | 是 | in_progress | platform-equivalent: unsigned-publisher NSIS plus signed updater; SmartScreen accepted |
+| RELEASE-NSIS-001 | release | Windows x64 NSIS、SHA-256 与 Tauri updater signature | 是 | verified | platform-equivalent: unsigned-publisher NSIS plus signed updater; SmartScreen accepted |
 | IMAGE-CLOUD-EXCLUDED | image | 私有 Supabase Storage 原图上传、按需下载、跨端替换与清理 | 是 | in_progress | none |
 | SOURCE-BATCH-MOVE-001 | excluded | 源码存在但 Android UI 不可达的批量移动 | 否 | not_started | excluded_source_only |
 

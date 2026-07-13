@@ -7,7 +7,7 @@ describe('parity manifest', () => {
     expect(manifest.windowsTarget).toEqual({
       product: 'PixelDone Windows',
       version: '3.2.0',
-      stage: 'release_candidate',
+      stage: 'formal_release',
       evidence: ['parity/evidence/windows/candidate-3.2.0.md']
     });
     expect(manifest.baseline.version).toBe('3.1.0');
@@ -16,14 +16,14 @@ describe('parity manifest', () => {
     expect(summarize(manifest).required).toBeGreaterThan(35);
   });
 
-  test('keeps new cloud and release rows gated until candidate verification completes', async () => {
+  test('keeps cloud rows gated while recognizing the verified formal installer', async () => {
     const manifest = await loadManifest();
     for (const id of ['LIST-FIXED-001', 'TODO-CRUD-001', 'SETTINGS-DOCK-001']) {
       const row = manifest.rows.find((candidate) => candidate.id === id);
       expect(row?.status).toBe('verified');
     }
     const installer = manifest.rows.find((candidate) => candidate.id === 'RELEASE-NSIS-001');
-    expect(installer?.status).toBe('in_progress');
+    expect(installer?.status).toBe('verified');
     expect(installer?.evidence.windows).toContain('parity/evidence/windows/candidate-3.2.0.md');
     const cloudImage = manifest.rows.find((candidate) => candidate.id === 'IMAGE-CLOUD-EXCLUDED');
     expect(cloudImage?.requiredForRelease).toBeTrue();

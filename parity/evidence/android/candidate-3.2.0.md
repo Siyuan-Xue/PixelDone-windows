@@ -1,6 +1,6 @@
 # Android 3.2.0 candidate verification evidence
 
-PixelDone Android 3.2.0 source was pushed to `main`. On 2026-07-13, the operator explicitly authorized formal publication while the installed/two-device checks below remained incomplete.
+PixelDone Android 3.2.0 source was pushed to `main` and the normal GitHub Release `v3.2.0` was published with `PixelDone-3.2.0-release.apk`. On 2026-07-13, the operator explicitly authorized formal publication while the installed/two-device checks below remained incomplete.
 
 - Room schema 6 persists attachment identifiers, private Storage paths, SHA-256, MIME type, byte size, attachment timestamps/versions, transfer state, and per-image errors.
 - Settings verifies the current password, updates it through Supabase Auth, requests global logout, clears the local Keystore-backed session, and requires a fresh sign-in.
