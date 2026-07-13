@@ -10,9 +10,10 @@ use crate::{
     infrastructure::auth::{AuthSession, SupabaseClient},
 };
 
-const TABLES: [&str; 4] = [
+const TABLES: [&str; 5] = [
     "todo_checklists",
     "todo_items",
+    "todo_attachments",
     "user_settings",
     "sync_tombstones",
 ];
@@ -216,7 +217,7 @@ mod tests {
             .unwrap()
             .as_array()
             .unwrap();
-        assert_eq!(changes.len(), 4);
+        assert_eq!(changes.len(), 5);
         for table in TABLES {
             assert!(changes.iter().any(|value| value["table"] == table));
         }

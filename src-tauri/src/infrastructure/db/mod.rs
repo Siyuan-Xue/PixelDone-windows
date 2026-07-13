@@ -41,6 +41,22 @@ pub struct ReminderDeliveryState {
     pub last_fired_at_millis: Option<i64>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LocalTodoAttachment {
+    pub todo_id: String,
+    pub local_file_name: Option<String>,
+    pub attachment_id: Option<String>,
+    pub object_path: Option<String>,
+    pub content_sha256: Option<String>,
+    pub content_type: Option<String>,
+    pub byte_size: Option<i64>,
+    pub updated_at_millis: i64,
+    pub deleted_at_millis: Option<i64>,
+    pub remote_version: Option<i64>,
+    pub sync_state: String,
+    pub last_error: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct SqliteRepository {
     pool: SqlitePool,
@@ -97,6 +113,98 @@ impl SqliteRepository {
         .bind(snoozed_until_millis)
         .bind(last_fired_at_millis)
         .bind(crate::domain::unix_now_millis())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn attachment(&self, todo_id: &str) -> Result<Option<LocalTodoAttachment>, AppError> {
+        let row = sqlx::query(
+            "SELECT todo_id, local_file_name, attachment_id, object_path, content_sha256, content_type, byte_size, updated_at_millis, deleted_at_millis, remote_version, sync_state, last_error FROM todo_attachments WHERE todo_id = ?",
+        )
+        .bind(todo_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(read_attachment).transpose()
+    }
+
+    pub async fn attachments(&self) -> Result<Vec<LocalTodoAttachment>, AppError> {
+        sqlx::query(
+            "SELECT todo_id, local_file_name, attachment_id, object_path, content_sha256, content_type, byte_size, updated_at_millis, deleted_at_millis, remote_version, sync_state, last_error FROM todo_attachments ORDER BY updated_at_millis, todo_id",
+        )
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(read_attachment)
+        .collect()
+    }
+
+    pub async fn save_attachment(&self, value: &LocalTodoAttachment) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO todo_attachments (todo_id, local_file_name, attachment_id, object_path, content_sha256, content_type, byte_size, updated_at_millis, deleted_at_millis, remote_version, sync_state, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(todo_id) DO UPDATE SET local_file_name = excluded.local_file_name, attachment_id = excluded.attachment_id, object_path = excluded.object_path, content_sha256 = excluded.content_sha256, content_type = excluded.content_type, byte_size = excluded.byte_size, updated_at_millis = excluded.updated_at_millis, deleted_at_millis = excluded.deleted_at_millis, remote_version = excluded.remote_version, sync_state = excluded.sync_state, last_error = excluded.last_error",
+        )
+        .bind(&value.todo_id)
+        .bind(&value.local_file_name)
+        .bind(&value.attachment_id)
+        .bind(&value.object_path)
+        .bind(&value.content_sha256)
+        .bind(&value.content_type)
+        .bind(value.byte_size)
+        .bind(value.updated_at_millis)
+        .bind(value.deleted_at_millis)
+        .bind(value.remote_version)
+        .bind(&value.sync_state)
+        .bind(&value.last_error)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_attachment(&self, todo_id: &str) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM todo_attachments WHERE todo_id = ?")
+            .bind(todo_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn queue_local_image_cleanup(
+        &self,
+        todo_id: &str,
+        object_path: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO todo_image_local_cleanup_queue (todo_id, object_path, queued_at_millis) VALUES (?, ?, ?)",
+        )
+        .bind(todo_id)
+        .bind(object_path)
+        .bind(crate::domain::unix_now_millis())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn local_image_cleanup_paths(&self) -> Result<Vec<(String, String)>, AppError> {
+        let rows = sqlx::query(
+            "SELECT todo_id, object_path FROM todo_image_local_cleanup_queue ORDER BY queued_at_millis, object_path",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| Ok((row.try_get("todo_id")?, row.try_get("object_path")?)))
+            .collect()
+    }
+
+    pub async fn delete_local_image_cleanup_path(
+        &self,
+        todo_id: &str,
+        object_path: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "DELETE FROM todo_image_local_cleanup_queue WHERE todo_id = ? AND object_path = ?",
+        )
+        .bind(todo_id)
+        .bind(object_path)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -545,7 +653,7 @@ impl SqliteRepository {
 
     pub async fn save_sync_cursor(&self, owner: &str, version: i64) -> Result<(), AppError> {
         sqlx::query(
-            "INSERT INTO sync_cursors (owner_user_id, remote_version, schema_version, updated_at_millis) VALUES (?, ?, 31, ?) ON CONFLICT(owner_user_id) DO UPDATE SET remote_version = excluded.remote_version, schema_version = excluded.schema_version, updated_at_millis = excluded.updated_at_millis",
+            "INSERT INTO sync_cursors (owner_user_id, remote_version, schema_version, updated_at_millis) VALUES (?, ?, 32, ?) ON CONFLICT(owner_user_id) DO UPDATE SET remote_version = excluded.remote_version, schema_version = excluded.schema_version, updated_at_millis = excluded.updated_at_millis",
         )
         .bind(owner)
         .bind(version)
@@ -623,6 +731,23 @@ impl SqliteRepository {
     pub async fn close(self) {
         self.pool.close().await;
     }
+}
+
+fn read_attachment(row: sqlx::sqlite::SqliteRow) -> Result<LocalTodoAttachment, AppError> {
+    Ok(LocalTodoAttachment {
+        todo_id: row.try_get("todo_id")?,
+        local_file_name: row.try_get("local_file_name")?,
+        attachment_id: row.try_get("attachment_id")?,
+        object_path: row.try_get("object_path")?,
+        content_sha256: row.try_get("content_sha256")?,
+        content_type: row.try_get("content_type")?,
+        byte_size: row.try_get("byte_size")?,
+        updated_at_millis: row.try_get("updated_at_millis")?,
+        deleted_at_millis: row.try_get("deleted_at_millis")?,
+        remote_version: row.try_get("remote_version")?,
+        sync_state: row.try_get("sync_state")?,
+        last_error: row.try_get("last_error")?,
+    })
 }
 
 async fn mark_dirty(

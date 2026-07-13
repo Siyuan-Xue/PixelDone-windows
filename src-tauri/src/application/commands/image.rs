@@ -1,4 +1,4 @@
-use std::{fs, io::Cursor, path::Path};
+use std::{fs, io::Cursor};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use image::{GenericImageView, ImageFormat, ImageReader};
@@ -8,9 +8,12 @@ use uuid::Uuid;
 use crate::{
     application::{commands::mutate, state::ManagedAppState},
     domain::{AppError, MutationResult, unix_now_millis},
+    infrastructure::{
+        db::LocalTodoAttachment,
+        image::{inspect_image_bytes, inspect_image_file, safe_file_name},
+    },
 };
 
-const MAX_IMAGE_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_PREVIEW_DIMENSION: u32 = 2048;
 
 #[tauri::command]
@@ -22,26 +25,33 @@ pub async fn attach_todo_image(
     source_path: String,
 ) -> Result<MutationResult, AppError> {
     let source = fs::canonicalize(&source_path)
-        .map_err(|error| AppError::Validation(format!("无法读取图片：{error}")))?;
-    let metadata = fs::metadata(&source)?;
-    if !metadata.is_file() || metadata.len() > MAX_IMAGE_BYTES {
-        return Err(AppError::Validation("图片必须小于 50 MB".to_owned()));
+        .map_err(|error| AppError::Validation(format!("Unable to read image: {error}")))?;
+    if !fs::metadata(&source)?.is_file() {
+        return Err(AppError::Validation(
+            "The selected path is not a file".to_owned(),
+        ));
     }
-    let extension = supported_extension(&source)?;
-    let file_name = format!("{}-{}.{}", todo_id, Uuid::new_v4(), extension);
+    let (bytes, image) = inspect_image_file(&source)?;
+    let file_name = format!("{}-{}.{}", todo_id, Uuid::new_v4(), image.extension);
     let destination = state.paths.attachments.join(&file_name);
-    fs::copy(&source, &destination)?;
+    fs::write(&destination, &bytes)?;
 
-    let previous_file = {
+    let (previous_file, previous_attachment) = {
         let runtime = state.inner.lock().await;
-        runtime
+        let previous_file = runtime
             .snapshot
             .checklists
             .iter()
             .find(|list| list.id == checklist_id)
             .and_then(|list| list.items.iter().find(|item| item.id == todo_id))
-            .and_then(|item| item.image_file_name.clone())
+            .and_then(|item| item.image_file_name.clone());
+        let previous_attachment = runtime.repository.attachment(&todo_id).await?;
+        (previous_file, previous_attachment)
     };
+    let updated_at_millis = unix_now_millis();
+    let previous_object_path = previous_attachment
+        .as_ref()
+        .and_then(|value| value.object_path.clone());
     let result = mutate(state.clone(), expected_revision, |snapshot| {
         let checklist = snapshot.checklist_mut(&checklist_id)?;
         let item = checklist
@@ -50,13 +60,43 @@ pub async fn attach_todo_image(
             .find(|item| item.id == todo_id)
             .ok_or_else(|| AppError::NotFound(format!("todo {todo_id}")))?;
         item.image_file_name = Some(file_name.clone());
-        item.updated_at_millis = unix_now_millis();
-        Ok(vec![checklist_id, todo_id])
+        item.updated_at_millis = updated_at_millis;
+        Ok(vec![checklist_id, todo_id.clone()])
     })
     .await;
+
     if result.is_err() {
         let _ = fs::remove_file(destination);
-    } else if let Some(previous) = previous_file
+        return result;
+    }
+
+    let repository = state.inner.lock().await.repository.clone();
+    repository
+        .save_attachment(&LocalTodoAttachment {
+            todo_id: todo_id.clone(),
+            local_file_name: Some(file_name),
+            attachment_id: previous_attachment
+                .as_ref()
+                .and_then(|value| value.attachment_id.clone())
+                .or_else(|| Some(Uuid::new_v4().to_string())),
+            object_path: None,
+            content_sha256: Some(image.content_sha256),
+            content_type: Some(image.content_type.to_owned()),
+            byte_size: Some(image.byte_size),
+            updated_at_millis,
+            deleted_at_millis: None,
+            remote_version: previous_attachment.and_then(|value| value.remote_version),
+            sync_state: "PENDING_UPLOAD".to_owned(),
+            last_error: None,
+        })
+        .await?;
+    if let Some(path) = previous_object_path {
+        repository
+            .queue_local_image_cleanup(&todo_id, &path)
+            .await?;
+    }
+    state.sync_notify.notify_one();
+    if let Some(previous) = previous_file
         && safe_file_name(&previous)
     {
         let _ = fs::remove_file(state.paths.attachments.join(previous));
@@ -71,16 +111,22 @@ pub async fn delete_todo_image(
     checklist_id: String,
     todo_id: String,
 ) -> Result<MutationResult, AppError> {
-    let previous_file = {
+    let (previous_file, previous_attachment) = {
         let runtime = state.inner.lock().await;
-        runtime
+        let file = runtime
             .snapshot
             .checklists
             .iter()
             .find(|list| list.id == checklist_id)
             .and_then(|list| list.items.iter().find(|item| item.id == todo_id))
-            .and_then(|item| item.image_file_name.clone())
+            .and_then(|item| item.image_file_name.clone());
+        let attachment = runtime.repository.attachment(&todo_id).await?;
+        (file, attachment)
     };
+    let updated_at_millis = unix_now_millis();
+    let previous_object_path = previous_attachment
+        .as_ref()
+        .and_then(|value| value.object_path.clone());
     let result = mutate(state.clone(), expected_revision, |snapshot| {
         let checklist = snapshot.checklist_mut(&checklist_id)?;
         let item = checklist
@@ -89,10 +135,28 @@ pub async fn delete_todo_image(
             .find(|item| item.id == todo_id)
             .ok_or_else(|| AppError::NotFound(format!("todo {todo_id}")))?;
         item.image_file_name = None;
-        item.updated_at_millis = unix_now_millis();
-        Ok(vec![checklist_id, todo_id])
+        item.updated_at_millis = updated_at_millis;
+        Ok(vec![checklist_id, todo_id.clone()])
     })
     .await?;
+
+    let repository = state.inner.lock().await.repository.clone();
+    repository
+        .save_attachment(&LocalTodoAttachment {
+            todo_id: todo_id.clone(),
+            updated_at_millis,
+            deleted_at_millis: Some(updated_at_millis),
+            remote_version: previous_attachment.and_then(|value| value.remote_version),
+            sync_state: "METADATA_PENDING".to_owned(),
+            ..LocalTodoAttachment::default()
+        })
+        .await?;
+    if let Some(path) = previous_object_path {
+        repository
+            .queue_local_image_cleanup(&todo_id, &path)
+            .await?;
+    }
+    state.sync_notify.notify_one();
     if let Some(previous) = previous_file
         && safe_file_name(&previous)
     {
@@ -106,21 +170,90 @@ pub async fn load_todo_image_preview(
     state: State<'_, ManagedAppState>,
     todo_id: String,
 ) -> Result<String, AppError> {
-    let file_name = {
+    let (file_name, attachment, repository) = {
         let runtime = state.inner.lock().await;
-        runtime
+        let item_file = runtime
             .snapshot
             .checklists
             .iter()
             .flat_map(|list| list.items.iter())
             .find(|item| item.id == todo_id)
-            .and_then(|item| item.image_file_name.clone())
-            .ok_or_else(|| AppError::NotFound(format!("image for {todo_id}")))?
+            .and_then(|item| item.image_file_name.clone());
+        let attachment = runtime.repository.attachment(&todo_id).await?;
+        let file_name = item_file
+            .or_else(|| {
+                attachment
+                    .as_ref()
+                    .and_then(|value| value.local_file_name.clone())
+            })
+            .ok_or_else(|| AppError::NotFound(format!("image for {todo_id}")))?;
+        (file_name, attachment, runtime.repository.clone())
     };
     if !safe_file_name(&file_name) {
-        return Err(AppError::Validation("图片路径无效".to_owned()));
+        return Err(AppError::Validation("Invalid image path".to_owned()));
     }
-    let path = state.paths.attachments.join(file_name);
+    let path = state.paths.attachments.join(&file_name);
+    if !path.is_file() {
+        let attachment = attachment
+            .ok_or_else(|| AppError::NotFound(format!("image metadata for {todo_id}")))?;
+        let object_path = attachment
+            .object_path
+            .as_deref()
+            .ok_or_else(|| AppError::NotFound(format!("remote image for {todo_id}")))?;
+        let expected_hash = attachment
+            .content_sha256
+            .as_deref()
+            .ok_or_else(|| AppError::Validation("Image hash is missing".to_owned()))?;
+        let expected_type = attachment
+            .content_type
+            .as_deref()
+            .ok_or_else(|| AppError::Validation("Image type is missing".to_owned()))?;
+        let expected_size = attachment
+            .byte_size
+            .ok_or_else(|| AppError::Validation("Image size is missing".to_owned()))?;
+        let session = state
+            .session
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| AppError::Auth("Sign in to download this image".to_owned()))?;
+        let mut session = state.cloud.refresh_if_needed(&session, false).await?;
+        state.credentials.save(&session)?;
+        *state.session.lock().await = Some(session.clone());
+        let bytes = match state.cloud.download_todo_image(&session, object_path).await {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                session = state.cloud.refresh_if_needed(&session, true).await?;
+                state.credentials.save(&session)?;
+                *state.session.lock().await = Some(session.clone());
+                state
+                    .cloud
+                    .download_todo_image(&session, object_path)
+                    .await?
+            }
+        };
+        let downloaded = inspect_image_bytes(&bytes)?;
+        if downloaded.content_sha256 != expected_hash
+            || downloaded.content_type != expected_type
+            || downloaded.byte_size != expected_size
+        {
+            return Err(AppError::Validation(
+                "Downloaded image failed integrity validation".to_owned(),
+            ));
+        }
+        let temporary = path.with_extension("download");
+        fs::write(&temporary, bytes)?;
+        fs::rename(&temporary, &path)?;
+        repository
+            .save_attachment(&LocalTodoAttachment {
+                local_file_name: Some(file_name.clone()),
+                sync_state: "SYNCED".to_owned(),
+                last_error: None,
+                ..attachment
+            })
+            .await?;
+    }
+
     let reader = ImageReader::open(&path)
         .map_err(|error| AppError::Validation(error.to_string()))?
         .with_guessed_format()
@@ -142,27 +275,6 @@ pub async fn load_todo_image_preview(
         "data:image/png;base64,{}",
         STANDARD.encode(output.into_inner())
     ))
-}
-
-fn supported_extension(path: &Path) -> Result<&'static str, AppError> {
-    match path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "jpg" | "jpeg" => Ok("jpg"),
-        "png" => Ok("png"),
-        "webp" => Ok("webp"),
-        _ => Err(AppError::Validation(
-            "仅支持 JPEG、PNG 和 WebP 图片".to_owned(),
-        )),
-    }
-}
-
-fn safe_file_name(value: &str) -> bool {
-    !value.is_empty() && Path::new(value).file_name().and_then(|name| name.to_str()) == Some(value)
 }
 
 #[cfg(test)]

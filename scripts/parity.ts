@@ -39,9 +39,10 @@ interface ParityReleaseOverlay {
   baselineManifest: string;
   windowsTarget: ParityManifest['windowsTarget'];
   overrideGroups: ParityOverrideGroup[];
+  rowOverrides?: Record<string, Partial<ParityRow>>;
 }
 
-export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.1.3.yaml';
+export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.2.0.yaml';
 
 export async function loadManifest(): Promise<ParityManifest> {
   const overlayUrl = new URL(`../${CURRENT_PARITY_MANIFEST}`, import.meta.url);
@@ -68,19 +69,27 @@ export async function loadManifest(): Promise<ParityManifest> {
     baseline: baseline.baseline,
     windowsTarget: overlay.windowsTarget,
     rows: baseline.rows.map((row) => {
-      const override = overrides.get(row.id);
-      if (!override) return row;
-      return {
+      const patch = overlay.rowOverrides?.[row.id];
+      const patched = patch ? {
         ...row,
+        ...patch,
+        android: { ...row.android, ...patch.android },
+        windows: { ...row.windows, ...patch.windows },
+        evidence: { ...row.evidence, ...patch.evidence }
+      } : row;
+      const override = overrides.get(row.id);
+      if (!override) return patched;
+      return {
+        ...patched,
         status: override.status,
         windows: {
-          ...row.windows,
-          tests: [...new Set([...row.windows.tests, ...(override.windowsTests ?? [])])]
+          ...patched.windows,
+          tests: [...new Set([...patched.windows.tests, ...(override.windowsTests ?? [])])]
         },
         evidence: {
-          ...row.evidence,
+          ...patched.evidence,
           windows: [
-            ...new Set([...row.evidence.windows, ...(override.windowsEvidence ?? [])])
+            ...new Set([...patched.evidence.windows, ...(override.windowsEvidence ?? [])])
           ]
         }
       };

@@ -44,7 +44,7 @@ let browserSnapshot: AppSnapshot = {
   auth: { cloudAvailable: true, signedIn: false, userId: null, userEmail: null, insecureHttp: true },
   sync: { state: 'SIGNED_OUT', message: '浏览器预览模式', remoteVersion: null, pendingCount: 0, conflictCount: 0, insecureHttp: true },
   reminder: { state: 'IDLE', activeTodoIds: [], lastFiredAtMillis: null, scheduledCount: 0, scheduleHorizonAtMillis: null, scheduleTruncated: false, message: null },
-  update: { state: 'CURRENT', currentVersion: '3.1.3', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
+  update: { state: 'CURRENT', currentVersion: '3.2.0', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
   checklists: [
     {
       id: 'main',
@@ -379,8 +379,8 @@ export const api = {
   async signOut(expectedRevision: number): Promise<MutationResult> {
     return invoke('auth_sign_out', { expectedRevision });
   },
-  async resetPassword(expectedRevision: number, email: string): Promise<MutationResult> {
-    return invoke('auth_reset_password', { expectedRevision, email });
+  async changePassword(expectedRevision: number, currentPassword: string, newPassword: string, confirmation: string): Promise<MutationResult> {
+    return invoke('auth_change_password', { expectedRevision, currentPassword, newPassword, confirmation });
   },
   async syncNow(expectedRevision: number): Promise<MutationResult> {
     return invoke('sync_now', { expectedRevision });

@@ -65,7 +65,7 @@ impl SupabaseClient {
         }
         let client = Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
-            .timeout(std::time::Duration::from_secs(20))
+            .timeout(std::time::Duration::from_secs(60))
             .build()?;
         Ok(Self {
             client,
@@ -102,15 +102,37 @@ impl SupabaseClient {
         .await
     }
 
-    pub async fn reset_password(&self, email: &str) -> Result<(), AppError> {
+    pub async fn change_password(
+        &self,
+        session: &AuthSession,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<bool, AppError> {
+        let email = session.email.as_deref().ok_or_else(|| {
+            AppError::Auth("The signed-in account has no email address".to_owned())
+        })?;
+        let reauthenticated = self.sign_in(email, current_password).await?;
+        if reauthenticated.user_id != session.user_id {
+            return Err(AppError::Auth(
+                "Password verification returned a different account".to_owned(),
+            ));
+        }
         self.request::<Value>(
-            Method::POST,
-            "/auth/v1/recover",
-            None,
-            Some(json!({ "email": email.trim() })),
+            Method::PUT,
+            "/auth/v1/user",
+            Some(&reauthenticated.access_token),
+            Some(json!({ "password": new_password })),
         )
         .await?;
-        Ok(())
+        Ok(self
+            .request::<Value>(
+                Method::POST,
+                "/auth/v1/logout?scope=global",
+                Some(&reauthenticated.access_token),
+                None,
+            )
+            .await
+            .is_ok())
     }
 
     pub async fn sign_out(&self, session: &AuthSession) -> Result<(), AppError> {
@@ -154,6 +176,69 @@ impl SupabaseClient {
             Some(body),
         )
         .await
+    }
+
+    pub async fn upload_todo_image(
+        &self,
+        session: &AuthSession,
+        object_path: &str,
+        content_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<(), AppError> {
+        let response = self
+            .client
+            .post(format!(
+                "{}/storage/v1/object/pixeldone-todo-images/{object_path}",
+                self.base_url
+            ))
+            .header("apikey", &self.publishable_key)
+            .bearer_auth(&session.access_token)
+            .header("Content-Type", content_type)
+            .header("x-upsert", "true")
+            .body(bytes)
+            .send()
+            .await?;
+        require_storage_success(response).await.map(|_| ())
+    }
+
+    pub async fn download_todo_image(
+        &self,
+        session: &AuthSession,
+        object_path: &str,
+    ) -> Result<Vec<u8>, AppError> {
+        let response = self
+            .client
+            .get(format!(
+                "{}/storage/v1/object/authenticated/pixeldone-todo-images/{object_path}",
+                self.base_url
+            ))
+            .header("apikey", &self.publishable_key)
+            .bearer_auth(&session.access_token)
+            .send()
+            .await?;
+        require_storage_success(response).await
+    }
+
+    pub async fn delete_todo_image_object(
+        &self,
+        session: &AuthSession,
+        object_path: &str,
+    ) -> Result<(), AppError> {
+        let response = self
+            .client
+            .delete(format!(
+                "{}/storage/v1/object/pixeldone-todo-images",
+                self.base_url
+            ))
+            .header("apikey", &self.publishable_key)
+            .bearer_auth(&session.access_token)
+            .json(&json!({ "prefixes": [object_path] }))
+            .send()
+            .await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(());
+        }
+        require_storage_success(response).await.map(|_| ())
     }
 
     async fn token_request(
@@ -218,6 +303,31 @@ impl SupabaseClient {
                 Err(AppError::Network(message))
             };
         }
-        serde_json::from_str(&text).map_err(|error| AppError::Network(error.to_string()))
+        serde_json::from_str(if text.trim().is_empty() {
+            "null"
+        } else {
+            &text
+        })
+        .map_err(|error| AppError::Network(error.to_string()))
     }
+}
+
+async fn require_storage_success(response: reqwest::Response) -> Result<Vec<u8>, AppError> {
+    let status = response.status();
+    let bytes = response.bytes().await?;
+    if status.is_success() {
+        return Ok(bytes.to_vec());
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    let message = serde_json::from_slice::<Value>(&bytes)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("message")
+                .or_else(|| value.get("error"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| format!("Supabase Storage HTTP {status}: {text}"));
+    Err(AppError::Network(message))
 }

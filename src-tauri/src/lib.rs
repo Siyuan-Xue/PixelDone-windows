@@ -202,7 +202,7 @@ pub fn run() {
             commands::auth::auth_sign_in,
             commands::auth::auth_sign_up,
             commands::auth::auth_sign_out,
-            commands::auth::auth_reset_password,
+            commands::auth::auth_change_password,
             commands::sync::sync_now,
             commands::sync::load_sync_conflicts,
             commands::sync::resolve_sync_conflict,

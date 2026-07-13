@@ -116,7 +116,15 @@ async fn automatic_sync(app: &AppHandle) {
     let mut runtime = state.inner.lock().await;
     let before = runtime.snapshot.clone();
     let repository = runtime.repository.clone();
-    match run_sync(&state.cloud, &repository, &session, &mut runtime.snapshot).await {
+    match run_sync(
+        &state.cloud,
+        &repository,
+        &session,
+        &mut runtime.snapshot,
+        &state.paths.attachments,
+    )
+    .await
+    {
         Ok(view) => runtime.snapshot.sync = view,
         Err(error) => {
             runtime.snapshot.sync = SyncRunView {

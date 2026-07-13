@@ -38,7 +38,12 @@ const english = {
   todoCount: 'tasks',
   syncDetail: 'SYNC',
   signInToSyncAndroid: 'Sign in to sync with Android.',
-  addChecklist: 'Add checklist'
+  addChecklist: 'Add checklist',
+  changePassword: 'Change password',
+  currentPassword: 'Current password',
+  newPassword: 'New password',
+  confirmPassword: 'Confirm new password',
+  changingPassword: 'Changing password…'
 } as const;
 
 export type WindowsMessageKey = keyof typeof english;
@@ -56,7 +61,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     legacyDeleteConfirm: '删除旧版 Roaming 数据库？当前 Local 数据库不会受到影响。', updateReady: '发现可用更新',
     notificationIssue: '通知需要处理', alarmRinging: 'XHIGH 闹钟响铃中', openSettings: '打开设置', editChecklist: '编辑清单',
     saveChecklist: '保存清单', cancelChecklist: '取消编辑清单', todoCount: '项待办', syncDetail: '同步',
-    signInToSyncAndroid: '登录后可与 Android 同步。', addChecklist: '添加清单'
+    signInToSyncAndroid: '登录后可与 Android 同步。', addChecklist: '添加清单',
+    changePassword: '修改密码', currentPassword: '当前密码', newPassword: '新密码', confirmPassword: '确认新密码', changingPassword: '正在修改密码…'
   },
   ar: {
     productKind: 'أداة بكسل', maker: 'CODEX & XUE', checklists: 'قوائم المهام', active: 'نشطة', done: 'مكتملة',
@@ -69,7 +75,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     legacyDeleteConfirm: 'حذف قاعدة بيانات Roaming القديمة؟ لن تتأثر قاعدة بيانات Local النشطة.', updateReady: 'يتوفر تحديث',
     notificationIssue: 'تحتاج الإشعارات إلى الانتباه', alarmRinging: 'منبّه XHIGH يرن', openSettings: 'فتح الإعدادات', editChecklist: 'تحرير القائمة',
     saveChecklist: 'حفظ القائمة', cancelChecklist: 'إلغاء تحرير القائمة', todoCount: 'مهام', syncDetail: 'المزامنة',
-    signInToSyncAndroid: 'سجّل الدخول للمزامنة مع Android.', addChecklist: 'إضافة قائمة'
+    signInToSyncAndroid: 'سجّل الدخول للمزامنة مع Android.', addChecklist: 'إضافة قائمة',
+    changePassword: 'تغيير كلمة المرور', currentPassword: 'كلمة المرور الحالية', newPassword: 'كلمة المرور الجديدة', confirmPassword: 'تأكيد كلمة المرور الجديدة', changingPassword: 'جارٍ تغيير كلمة المرور…'
   },
   fr: {
     productKind: 'OUTIL PIXEL', maker: 'CODEX & XUE', checklists: 'LISTES', active: 'ACTIVES', done: 'TERMINÉES',
@@ -82,7 +89,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     legacyDeleteConfirm: 'Supprimer l’ancienne base Roaming ? La base Local active ne sera pas affectée.', updateReady: 'MISE À JOUR DISPONIBLE',
     notificationIssue: 'NOTIFICATION À VÉRIFIER', alarmRinging: 'ALARME XHIGH EN COURS', openSettings: 'Ouvrir les réglages', editChecklist: 'Modifier la liste',
     saveChecklist: 'Enregistrer la liste', cancelChecklist: 'Annuler la modification', todoCount: 'tâches', syncDetail: 'SYNCHRO',
-    signInToSyncAndroid: 'Connectez-vous pour synchroniser avec Android.', addChecklist: 'Ajouter une liste'
+    signInToSyncAndroid: 'Connectez-vous pour synchroniser avec Android.', addChecklist: 'Ajouter une liste',
+    changePassword: 'Modifier le mot de passe', currentPassword: 'Mot de passe actuel', newPassword: 'Nouveau mot de passe', confirmPassword: 'Confirmer le nouveau mot de passe', changingPassword: 'Modification du mot de passe…'
   },
   ru: {
     productKind: 'ПИКСЕЛЬНЫЙ ИНСТРУМЕНТ', maker: 'CODEX & XUE', checklists: 'СПИСКИ', active: 'АКТИВНЫЕ', done: 'ГОТОВО',
@@ -95,7 +103,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     legacyDeleteConfirm: 'Удалить старую базу Roaming? Активная база Local не изменится.', updateReady: 'ДОСТУПНО ОБНОВЛЕНИЕ',
     notificationIssue: 'ТРЕБУЕТСЯ НАСТРОЙКА УВЕДОМЛЕНИЙ', alarmRinging: 'ЗВОНИТ БУДИЛЬНИК XHIGH', openSettings: 'Открыть настройки', editChecklist: 'Изменить список',
     saveChecklist: 'Сохранить список', cancelChecklist: 'Отменить изменение', todoCount: 'задач', syncDetail: 'СИНХР.',
-    signInToSyncAndroid: 'Войдите, чтобы синхронизироваться с Android.', addChecklist: 'Добавить список'
+    signInToSyncAndroid: 'Войдите, чтобы синхронизироваться с Android.', addChecklist: 'Добавить список',
+    changePassword: 'Изменить пароль', currentPassword: 'Текущий пароль', newPassword: 'Новый пароль', confirmPassword: 'Подтвердите новый пароль', changingPassword: 'Изменение пароля…'
   },
   es: {
     productKind: 'UTILIDAD PÍXEL', maker: 'CODEX & XUE', checklists: 'LISTAS', active: 'ACTIVAS', done: 'HECHAS',
@@ -108,7 +117,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     legacyDeleteConfirm: '¿Eliminar la base Roaming antigua? La base Local activa no se verá afectada.', updateReady: 'ACTUALIZACIÓN DISPONIBLE',
     notificationIssue: 'NOTIFICACIÓN REQUIERE ATENCIÓN', alarmRinging: 'ALARMA XHIGH SONANDO', openSettings: 'Abrir ajustes', editChecklist: 'Editar lista',
     saveChecklist: 'Guardar lista', cancelChecklist: 'Cancelar edición', todoCount: 'tareas', syncDetail: 'SINCRONIZAR',
-    signInToSyncAndroid: 'Inicia sesión para sincronizar con Android.', addChecklist: 'Añadir lista'
+    signInToSyncAndroid: 'Inicia sesión para sincronizar con Android.', addChecklist: 'Añadir lista',
+    changePassword: 'Cambiar contraseña', currentPassword: 'Contraseña actual', newPassword: 'Nueva contraseña', confirmPassword: 'Confirmar nueva contraseña', changingPassword: 'Cambiando contraseña…'
   }
 };
 

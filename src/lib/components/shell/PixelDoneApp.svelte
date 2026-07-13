@@ -48,6 +48,11 @@
   let authPassword = $state('');
   let authMode = $state<'sign-in' | 'sign-up'>('sign-in');
   let authBusy = $state(false);
+  let passwordEditorOpen = $state(false);
+  let currentPassword = $state('');
+  let newPassword = $state('');
+  let confirmPassword = $state('');
+  let passwordBusy = $state(false);
   let conflicts = $state<SyncConflictView[]>([]);
   let conflictOpen = $state(false);
   let previewData = $state<string | null>(null);
@@ -434,6 +439,24 @@
     authBusy = false;
   }
 
+  async function changePassword(): Promise<void> {
+    if (!snapshot || passwordBusy) return;
+    passwordBusy = true;
+    const result = await commit(api.changePassword(
+      snapshot.revision,
+      currentPassword,
+      newPassword,
+      confirmPassword
+    ));
+    passwordBusy = false;
+    if (result) {
+      currentPassword = '';
+      newPassword = '';
+      confirmPassword = '';
+      passwordEditorOpen = false;
+    }
+  }
+
   async function syncNow(): Promise<void> {
     if (!snapshot) return;
     if (await commit(api.syncNow(snapshot.revision)) && snapshot.sync.conflictCount > 0) await openConflicts();
@@ -467,10 +490,14 @@
   }
 
   async function showImagePreview(todoId: string): Promise<void> {
-    previewData = await api.loadImagePreview(todoId);
-    previewZoom = 1;
-    previewX = 0;
-    previewY = 0;
+    try {
+      previewData = await api.loadImagePreview(todoId);
+      previewZoom = 1;
+      previewX = 0;
+      previewY = 0;
+    } catch (error) {
+      errorMessage = errorText(error);
+    }
   }
 
   function dockAction(action: DockAction): void {
@@ -731,8 +758,21 @@
                 <div class="auth-modes"><button type="button" class:active={authMode === 'sign-in'} onclick={() => (authMode = 'sign-in')}>{t('sign_in')}</button><button type="button" class:active={authMode === 'sign-up'} onclick={() => (authMode = 'sign-up')}>{t('sign_up')}</button></div>
                 <input id="auth-email" type="email" placeholder={t('email')} bind:value={authEmail} />
                 <input type="password" placeholder={t('password')} bind:value={authPassword} />
-                <div class="auth-buttons"><button class="primary-button" disabled={authBusy}>{authMode === 'sign-in' ? t('sign_in') : t('sign_up')}</button><button type="button" class="quiet-button" onclick={() => void commit(api.resetPassword(snapshot.revision, authEmail))}>{t('reset')}</button></div>
+                <div class="auth-buttons"><button class="primary-button" disabled={authBusy}>{authMode === 'sign-in' ? t('sign_in') : t('sign_up')}</button></div>
               </form>
+            {:else}
+              <div class="setting-row">
+                <div><strong>{wt('changePassword')}</strong><p>{snapshot.auth.userEmail}</p></div>
+                <button class="quiet-button" onclick={() => (passwordEditorOpen = !passwordEditorOpen)}>{wt('changePassword')}</button>
+              </div>
+              {#if passwordEditorOpen}
+                <form class="auth-form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
+                  <input type="password" autocomplete="current-password" placeholder={wt('currentPassword')} bind:value={currentPassword} />
+                  <input type="password" autocomplete="new-password" placeholder={wt('newPassword')} bind:value={newPassword} />
+                  <input type="password" autocomplete="new-password" placeholder={wt('confirmPassword')} bind:value={confirmPassword} />
+                  <div class="auth-buttons"><button class="primary-button" disabled={passwordBusy}>{passwordBusy ? wt('changingPassword') : wt('changePassword')}</button></div>
+                </form>
+              {/if}
             {/if}
             <div class="setting-row"><div><strong>{t('sync')}</strong><p data-testid="sync-detail">{syncDetailMessage()}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.sync.conflictCount}<button class="primary-button" onclick={() => void openConflicts()}>{t('review')} {snapshot.sync.conflictCount}</button>{/if}</div></div>
           </section>

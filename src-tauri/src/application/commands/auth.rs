@@ -83,17 +83,60 @@ pub async fn auth_sign_out(
 }
 
 #[tauri::command]
-pub async fn auth_reset_password(
+pub async fn auth_change_password(
     state: State<'_, ManagedAppState>,
     expected_revision: i64,
-    email: String,
+    current_password: String,
+    new_password: String,
+    confirmation: String,
 ) -> Result<MutationResult, AppError> {
-    if email.trim().is_empty() {
-        return Err(AppError::Validation("请输入邮箱".to_owned()));
+    if current_password.is_empty() || new_password.is_empty() || confirmation.is_empty() {
+        return Err(AppError::Validation(
+            "All password fields are required".to_owned(),
+        ));
     }
-    state.cloud.reset_password(&email).await?;
-    mutate(state, expected_revision, |snapshot| {
-        snapshot.sync.message = Some("密码重置邮件已发送".to_owned());
+    if new_password != confirmation {
+        return Err(AppError::Validation(
+            "New passwords do not match".to_owned(),
+        ));
+    }
+    if current_password == new_password {
+        return Err(AppError::Validation(
+            "Choose a different new password".to_owned(),
+        ));
+    }
+    if new_password.len() < 6 {
+        return Err(AppError::Validation(
+            "New password must contain at least 6 characters".to_owned(),
+        ));
+    }
+    let session = state
+        .session
+        .lock()
+        .await
+        .clone()
+        .ok_or_else(|| AppError::Auth("Sign in first".to_owned()))?;
+    let global_logout = state
+        .cloud
+        .change_password(&session, &current_password, &new_password)
+        .await?;
+    state.credentials.clear()?;
+    *state.session.lock().await = None;
+    state.auth_notify.notify_one();
+    let auth = state.cloud.auth_view(None);
+    mutate(state, expected_revision, move |snapshot| {
+        snapshot.auth = auth;
+        snapshot.sync = SyncRunView {
+            state: SyncState::SignedOut,
+            message: Some(if global_logout {
+                "Password changed. Sign in again".to_owned()
+            } else {
+                "Password changed. This device signed out; some other sessions may still be active"
+                    .to_owned()
+            }),
+            insecure_http: true,
+            ..SyncRunView::default()
+        };
         Ok(vec!["auth".to_owned()])
     })
     .await

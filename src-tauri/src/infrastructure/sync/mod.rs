@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -11,11 +11,15 @@ use crate::{
     },
     infrastructure::{
         auth::{AuthSession, SupabaseClient},
-        db::{LocalTombstone, SqliteRepository, StoredConflict},
+        db::{LocalTodoAttachment, LocalTombstone, SqliteRepository, StoredConflict},
+        image::{
+            cache_file_name, extension_for_content_type, inspect_image_file, is_safe_object_path,
+            safe_file_name,
+        },
     },
 };
 
-const EXPECTED_SCHEMA: &str = "3.1";
+const EXPECTED_SCHEMA: &str = "3.2";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct RemoteSnapshot {
@@ -23,6 +27,8 @@ struct RemoteSnapshot {
     checklists: Vec<RemoteChecklist>,
     #[serde(default)]
     items: Vec<RemoteTodo>,
+    #[serde(default)]
+    attachments: Vec<RemoteAttachment>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -33,9 +39,13 @@ struct RemoteChangeBatch {
     checklists: Vec<RemoteChecklist>,
     #[serde(default)]
     items: Vec<RemoteTodo>,
+    #[serde(default)]
+    attachments: Vec<RemoteAttachment>,
     settings: Option<RemoteSettings>,
     #[serde(default)]
     tombstones: Vec<RemoteTombstone>,
+    #[serde(default)]
+    image_cleanup_paths: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,6 +59,8 @@ struct RemotePushResult {
     tombstones: Vec<RemoteTombstone>,
     #[serde(default)]
     conflicts: Vec<RemoteConflict>,
+    #[serde(default)]
+    image_cleanup_paths: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,12 +89,23 @@ struct RemoteTodo {
     created_at_millis: i64,
     updated_at_millis: i64,
     reminder_repeat: String,
-    image_local_name: Option<String>,
-    image_remote_path: Option<String>,
-    image_sync_state: String,
     trashed_from_checklist_id: Option<String>,
     trashed_from_checklist_name: Option<String>,
     trashed_at_millis: Option<i64>,
+    remote_version: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct RemoteAttachment {
+    owner_user_id: String,
+    todo_local_id: String,
+    attachment_id: Option<String>,
+    object_path: Option<String>,
+    content_sha256: Option<String>,
+    content_type: Option<String>,
+    byte_size: Option<i64>,
+    updated_at_millis: i64,
+    deleted_at_millis: Option<i64>,
     remote_version: Option<i64>,
 }
 
@@ -115,6 +138,7 @@ pub async fn run_sync(
     repository: &SqliteRepository,
     session: &AuthSession,
     snapshot: &mut AppSnapshot,
+    attachments_dir: &Path,
 ) -> Result<SyncRunView, AppError> {
     let cursor = repository.sync_cursor(&session.user_id).await?;
     let dirty = repository.dirty_records().await?;
@@ -126,16 +150,25 @@ pub async fn run_sync(
         .rpc(
             session,
             "pixeldone_pull_changes",
-            json!({ "p_since_version": cursor }),
+            json!({
+                "p_since_version": cursor,
+                "p_client_schema_version": EXPECTED_SCHEMA,
+            }),
         )
         .await?;
     require_schema(&pulled.schema_version)?;
-    apply_tombstones(repository, snapshot, &pulled.tombstones).await?;
+    apply_tombstones(repository, snapshot, &pulled.tombstones, attachments_dir).await?;
     apply_remote_changes(repository, snapshot, &pulled, &dirty_keys).await?;
+    apply_remote_attachments(repository, snapshot, &pulled.attachments, attachments_dir).await?;
+    drain_local_cleanup_queue(cloud, repository, session).await?;
     repository.save_snapshot(snapshot).await?;
     repository
         .save_sync_cursor(&session.user_id, pulled.server_version)
         .await?;
+
+    let cleaned_image_paths =
+        clean_remote_objects(cloud, session, &pulled.image_cleanup_paths).await;
+    prepare_pending_attachments(cloud, repository, session, snapshot, attachments_dir).await?;
 
     let dirty = repository.dirty_records().await?;
     let tombstones = repository.tombstones().await?;
@@ -167,8 +200,21 @@ pub async fn run_sync(
     } else {
         None
     };
+    let attachments = repository
+        .attachments()
+        .await?
+        .into_iter()
+        .filter(|value| value.sync_state == "METADATA_PENDING")
+        .map(|value| remote_attachment(value, &session.user_id))
+        .collect::<Vec<_>>();
 
-    if checklists.is_empty() && items.is_empty() && settings.is_none() && tombstones.is_empty() {
+    if checklists.is_empty()
+        && items.is_empty()
+        && attachments.is_empty()
+        && settings.is_none()
+        && tombstones.is_empty()
+        && cleaned_image_paths.is_empty()
+    {
         return sync_view(repository, pulled.server_version, None).await;
     }
 
@@ -182,10 +228,13 @@ pub async fn run_sync(
             "pixeldone_apply_mutation",
             json!({
                 "p_mutation_uuid": Uuid::new_v4().to_string(),
+                "p_client_schema_version": EXPECTED_SCHEMA,
                 "p_checklists": checklists,
                 "p_items": items,
+                "p_attachments": attachments,
                 "p_settings": settings,
                 "p_tombstones": payload_tombstones,
+                "p_cleaned_image_paths": cleaned_image_paths,
             }),
         )
         .await?;
@@ -206,6 +255,13 @@ pub async fn run_sync(
         apply_remote_todo(snapshot, accepted)?;
         repository.clear_dirty("item", &accepted.local_id).await?;
     }
+    apply_accepted_attachments(
+        repository,
+        snapshot,
+        &pushed.accepted.attachments,
+        attachments_dir,
+    )
+    .await?;
     if let Some(settings) = &pushed.settings {
         snapshot.settings.language_mode = AppLanguage::from_sync_value(&settings.language_mode);
         repository
@@ -217,18 +273,52 @@ pub async fn run_sync(
         repository
             .delete_tombstone(&accepted.record_type, &accepted.local_id)
             .await?;
+        if accepted.record_type == "item" {
+            delete_local_attachment(repository, attachments_dir, &accepted.local_id).await?;
+        }
     }
+    drain_local_cleanup_queue(cloud, repository, session).await?;
     if !conflict_keys.is_empty() {
         let latest: RemoteChangeBatch = cloud
             .rpc(
                 session,
                 "pixeldone_pull_changes",
-                json!({ "p_since_version": 0 }),
+                json!({
+                    "p_since_version": 0,
+                    "p_client_schema_version": EXPECTED_SCHEMA,
+                }),
             )
             .await?;
+        apply_remote_attachments(repository, snapshot, &latest.attachments, attachments_dir)
+            .await?;
+        drain_local_cleanup_queue(cloud, repository, session).await?;
         for conflict in &pushed.conflicts {
-            save_push_conflict(repository, snapshot, conflict, &latest).await?;
+            if conflict.record_type != "attachment" {
+                save_push_conflict(repository, snapshot, conflict, &latest).await?;
+            }
         }
+    }
+
+    let cleaned_after_push =
+        clean_remote_objects(cloud, session, &pushed.image_cleanup_paths).await;
+    if !cleaned_after_push.is_empty() {
+        let acknowledged: RemotePushResult = cloud
+            .rpc(
+                session,
+                "pixeldone_apply_mutation",
+                json!({
+                    "p_mutation_uuid": Uuid::new_v4().to_string(),
+                    "p_client_schema_version": EXPECTED_SCHEMA,
+                    "p_checklists": [],
+                    "p_items": [],
+                    "p_attachments": [],
+                    "p_settings": null,
+                    "p_tombstones": [],
+                    "p_cleaned_image_paths": cleaned_after_push,
+                }),
+            )
+            .await?;
+        require_schema(&acknowledged.schema_version)?;
     }
     repository.save_snapshot(snapshot).await?;
     repository
@@ -425,13 +515,31 @@ async fn apply_tombstones(
     repository: &SqliteRepository,
     snapshot: &mut AppSnapshot,
     tombstones: &[RemoteTombstone],
+    attachments_dir: &Path,
 ) -> Result<(), AppError> {
     for tombstone in tombstones {
         match tombstone.record_type.as_str() {
-            "checklist" => snapshot
-                .checklists
-                .retain(|list| list.kind != ChecklistKind::Normal || list.id != tombstone.local_id),
+            "checklist" => {
+                let todo_ids = snapshot
+                    .checklists
+                    .iter()
+                    .find(|list| list.id == tombstone.local_id)
+                    .map(|list| {
+                        list.items
+                            .iter()
+                            .map(|item| item.id.clone())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                for todo_id in todo_ids {
+                    delete_local_attachment(repository, attachments_dir, &todo_id).await?;
+                }
+                snapshot.checklists.retain(|list| {
+                    list.kind != ChecklistKind::Normal || list.id != tombstone.local_id
+                });
+            }
             "item" => {
+                delete_local_attachment(repository, attachments_dir, &tombstone.local_id).await?;
                 for list in &mut snapshot.checklists {
                     list.items.retain(|item| item.id != tombstone.local_id);
                 }
@@ -443,6 +551,283 @@ async fn apply_tombstones(
             .await?;
     }
     *snapshot = snapshot.clone().normalized();
+    Ok(())
+}
+
+async fn prepare_pending_attachments(
+    cloud: &SupabaseClient,
+    repository: &SqliteRepository,
+    session: &AuthSession,
+    snapshot: &AppSnapshot,
+    attachments_dir: &Path,
+) -> Result<(), AppError> {
+    let active_todo_ids = snapshot
+        .checklists
+        .iter()
+        .flat_map(|list| list.items.iter())
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    for mut attachment in repository.attachments().await?.into_iter().filter(|value| {
+        active_todo_ids.contains(value.todo_id.as_str())
+            && value.deleted_at_millis.is_none()
+            && matches!(value.sync_state.as_str(), "PENDING_UPLOAD" | "ERROR")
+    }) {
+        let Some(file_name) = attachment.local_file_name.clone() else {
+            attachment.sync_state = "ERROR".to_owned();
+            attachment.last_error = Some("Local image file is missing".to_owned());
+            repository.save_attachment(&attachment).await?;
+            continue;
+        };
+        if !safe_file_name(&file_name) {
+            attachment.sync_state = "ERROR".to_owned();
+            attachment.last_error = Some("Invalid local image file name".to_owned());
+            repository.save_attachment(&attachment).await?;
+            continue;
+        }
+        let (bytes, metadata) = match inspect_image_file(&attachments_dir.join(&file_name)) {
+            Ok(value) => value,
+            Err(error) => {
+                attachment.sync_state = "ERROR".to_owned();
+                attachment.last_error = Some(error.to_string().chars().take(280).collect());
+                repository.save_attachment(&attachment).await?;
+                continue;
+            }
+        };
+        let attachment_id = attachment
+            .attachment_id
+            .clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let extension = extension_for_content_type(metadata.content_type)?;
+        let object_path = format!(
+            "{}/{}/{}-{}.{}",
+            session.user_id, attachment.todo_id, attachment_id, metadata.content_sha256, extension
+        );
+        if !is_safe_object_path(&object_path) {
+            attachment.sync_state = "ERROR".to_owned();
+            attachment.last_error = Some("Invalid Storage object path".to_owned());
+            repository.save_attachment(&attachment).await?;
+            continue;
+        }
+        match cloud
+            .upload_todo_image(session, &object_path, metadata.content_type, bytes)
+            .await
+        {
+            Ok(()) => {
+                attachment.attachment_id = Some(attachment_id);
+                attachment.object_path = Some(object_path);
+                attachment.content_sha256 = Some(metadata.content_sha256);
+                attachment.content_type = Some(metadata.content_type.to_owned());
+                attachment.byte_size = Some(metadata.byte_size);
+                attachment.sync_state = "METADATA_PENDING".to_owned();
+                attachment.last_error = None;
+            }
+            Err(error) => {
+                attachment.sync_state = "ERROR".to_owned();
+                attachment.last_error = Some(error.to_string().chars().take(280).collect());
+            }
+        }
+        repository.save_attachment(&attachment).await?;
+    }
+    Ok(())
+}
+
+async fn clean_remote_objects(
+    cloud: &SupabaseClient,
+    session: &AuthSession,
+    paths: &[String],
+) -> Vec<String> {
+    let mut cleaned = Vec::new();
+    for path in paths.iter().filter(|path| is_safe_object_path(path)) {
+        if cloud.delete_todo_image_object(session, path).await.is_ok() {
+            cleaned.push(path.clone());
+        }
+    }
+    cleaned
+}
+
+async fn drain_local_cleanup_queue(
+    cloud: &SupabaseClient,
+    repository: &SqliteRepository,
+    session: &AuthSession,
+) -> Result<(), AppError> {
+    for (todo_id, object_path) in repository.local_image_cleanup_paths().await? {
+        let current = repository.attachment(&todo_id).await?;
+        let still_pending = current.as_ref().is_some_and(|value| {
+            matches!(
+                value.sync_state.as_str(),
+                "PENDING_UPLOAD" | "METADATA_PENDING" | "ERROR"
+            )
+        });
+        let still_current = current
+            .as_ref()
+            .and_then(|value| value.object_path.as_deref())
+            == Some(object_path.as_str());
+        if still_pending || still_current || !is_safe_object_path(&object_path) {
+            continue;
+        }
+        if cloud
+            .delete_todo_image_object(session, &object_path)
+            .await
+            .is_ok()
+        {
+            repository
+                .delete_local_image_cleanup_path(&todo_id, &object_path)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn apply_accepted_attachments(
+    repository: &SqliteRepository,
+    snapshot: &mut AppSnapshot,
+    values: &[RemoteAttachment],
+    attachments_dir: &Path,
+) -> Result<(), AppError> {
+    apply_remote_attachments(repository, snapshot, values, attachments_dir).await
+}
+
+async fn apply_remote_attachments(
+    repository: &SqliteRepository,
+    snapshot: &mut AppSnapshot,
+    values: &[RemoteAttachment],
+    attachments_dir: &Path,
+) -> Result<(), AppError> {
+    for remote in values {
+        let local = repository.attachment(&remote.todo_local_id).await?;
+        if let Some(mut local) = local.clone()
+            && matches!(
+                local.sync_state.as_str(),
+                "PENDING_UPLOAD" | "METADATA_PENDING" | "ERROR"
+            )
+            && local.updated_at_millis > remote.updated_at_millis
+        {
+            local.remote_version = remote.remote_version;
+            repository.save_attachment(&local).await?;
+            continue;
+        }
+
+        if let Some(path) = local
+            .as_ref()
+            .and_then(|value| value.object_path.as_ref())
+            .filter(|path| remote.object_path.as_ref() != Some(*path))
+        {
+            repository
+                .queue_local_image_cleanup(&remote.todo_local_id, path)
+                .await?;
+        }
+
+        if remote.deleted_at_millis.is_some() {
+            if let Some(file_name) = local.and_then(|value| value.local_file_name)
+                && safe_file_name(&file_name)
+            {
+                let _ = fs::remove_file(attachments_dir.join(file_name));
+            }
+            if let Some((_, _, item)) = find_todo_mut(snapshot, &remote.todo_local_id) {
+                item.image_file_name = None;
+            }
+            repository
+                .save_attachment(&LocalTodoAttachment {
+                    todo_id: remote.todo_local_id.clone(),
+                    updated_at_millis: remote.updated_at_millis,
+                    deleted_at_millis: remote.deleted_at_millis,
+                    remote_version: remote.remote_version,
+                    sync_state: "SYNCED".to_owned(),
+                    ..LocalTodoAttachment::default()
+                })
+                .await?;
+            continue;
+        }
+
+        let attachment_id = required_attachment_field(&remote.attachment_id, "attachment_id")?;
+        let object_path = required_attachment_field(&remote.object_path, "object_path")?;
+        let hash = required_attachment_field(&remote.content_sha256, "content_sha256")?;
+        let content_type = required_attachment_field(&remote.content_type, "content_type")?;
+        let byte_size = remote
+            .byte_size
+            .filter(|size| (1..=10 * 1024 * 1024).contains(size))
+            .ok_or_else(|| AppError::Network("Invalid attachment byte_size".to_owned()))?;
+        if !is_safe_object_path(object_path) {
+            return Err(AppError::Network(
+                "Invalid attachment object_path".to_owned(),
+            ));
+        }
+        let expected_prefix = format!("{}/{}/", remote.owner_user_id, remote.todo_local_id);
+        if !object_path.starts_with(&expected_prefix) {
+            return Err(AppError::Network(
+                "Attachment object_path owner prefix does not match metadata".to_owned(),
+            ));
+        }
+        let cache_name = cache_file_name(&remote.todo_local_id, attachment_id, hash, content_type)?;
+        let local_match = local
+            .as_ref()
+            .and_then(|value| value.local_file_name.as_ref())
+            .filter(|name| safe_file_name(name))
+            .and_then(|name| {
+                inspect_image_file(&attachments_dir.join(name))
+                    .ok()
+                    .filter(|(_, metadata)| {
+                        metadata.content_sha256 == hash.as_str()
+                            && metadata.content_type == content_type.as_str()
+                            && metadata.byte_size == byte_size
+                    })
+                    .map(|_| name.clone())
+            });
+        if local_match.is_none()
+            && let Some(stale) = local
+                .as_ref()
+                .and_then(|value| value.local_file_name.as_ref())
+                .filter(|name| safe_file_name(name))
+        {
+            let _ = fs::remove_file(attachments_dir.join(stale));
+        }
+        let local_file_name = local_match.unwrap_or(cache_name);
+        let cached = attachments_dir.join(&local_file_name).is_file();
+        if let Some((_, _, item)) = find_todo_mut(snapshot, &remote.todo_local_id) {
+            item.image_file_name = Some(local_file_name.clone());
+        }
+        repository
+            .save_attachment(&LocalTodoAttachment {
+                todo_id: remote.todo_local_id.clone(),
+                local_file_name: Some(local_file_name),
+                attachment_id: Some(attachment_id.clone()),
+                object_path: Some(object_path.clone()),
+                content_sha256: Some(hash.clone()),
+                content_type: Some(content_type.clone()),
+                byte_size: Some(byte_size),
+                updated_at_millis: remote.updated_at_millis,
+                deleted_at_millis: None,
+                remote_version: remote.remote_version,
+                sync_state: if cached { "SYNCED" } else { "REMOTE_ONLY" }.to_owned(),
+                last_error: None,
+            })
+            .await?;
+    }
+    Ok(())
+}
+
+fn required_attachment_field<'a>(
+    value: &'a Option<String>,
+    name: &str,
+) -> Result<&'a String, AppError> {
+    value
+        .as_ref()
+        .ok_or_else(|| AppError::Network(format!("Attachment {name} is missing")))
+}
+
+async fn delete_local_attachment(
+    repository: &SqliteRepository,
+    attachments_dir: &Path,
+    todo_id: &str,
+) -> Result<(), AppError> {
+    if let Some(value) = repository.attachment(todo_id).await? {
+        if let Some(file_name) = value.local_file_name
+            && safe_file_name(&file_name)
+        {
+            let _ = fs::remove_file(attachments_dir.join(file_name));
+        }
+        repository.delete_attachment(todo_id).await?;
+    }
     Ok(())
 }
 
@@ -628,8 +1013,20 @@ async fn sync_view(
     version: i64,
     message: Option<String>,
 ) -> Result<SyncRunView, AppError> {
-    let pending_count =
-        repository.dirty_records().await?.len() + repository.tombstones().await?.len();
+    let attachments = repository.attachments().await?;
+    let image_error = attachments
+        .iter()
+        .find(|value| value.sync_state == "ERROR")
+        .and_then(|value| value.last_error.clone())
+        .map(|error| format!("Todo image sync pending: {error}"));
+    let pending_attachments = attachments
+        .into_iter()
+        .filter(|value| !matches!(value.sync_state.as_str(), "SYNCED" | "REMOTE_ONLY"))
+        .count();
+    let pending_count = repository.dirty_records().await?.len()
+        + repository.tombstones().await?.len()
+        + pending_attachments
+        + repository.local_image_cleanup_paths().await?.len();
     let conflict_count = repository.conflicts().await?.len();
     Ok(SyncRunView {
         state: if conflict_count > 0 {
@@ -637,7 +1034,7 @@ async fn sync_view(
         } else {
             SyncState::Synced
         },
-        message,
+        message: message.or(image_error),
         remote_version: Some(version),
         pending_count,
         conflict_count,
@@ -677,13 +1074,25 @@ fn remote_todo(list_id: &str, index: usize, item: &TodoItem, owner: &str) -> Rem
         created_at_millis: item.created_at_millis,
         updated_at_millis: item.updated_at_millis,
         reminder_repeat: repeat_name(item.reminder_repeat).to_owned(),
-        image_local_name: None,
-        image_remote_path: None,
-        image_sync_state: "LOCAL_ONLY".to_owned(),
         trashed_from_checklist_id: item.trashed_from_checklist_id.clone(),
         trashed_from_checklist_name: item.trashed_from_checklist_name.clone(),
         trashed_at_millis: item.trashed_at_millis,
         remote_version: item.remote_version,
+    }
+}
+
+fn remote_attachment(value: LocalTodoAttachment, owner: &str) -> RemoteAttachment {
+    RemoteAttachment {
+        owner_user_id: owner.to_owned(),
+        todo_local_id: value.todo_id,
+        attachment_id: value.attachment_id,
+        object_path: value.object_path,
+        content_sha256: value.content_sha256,
+        content_type: value.content_type,
+        byte_size: value.byte_size,
+        updated_at_millis: value.updated_at_millis,
+        deleted_at_millis: value.deleted_at_millis,
+        remote_version: value.remote_version,
     }
 }
 
@@ -722,15 +1131,7 @@ fn find_todo_mut<'a>(
 }
 
 fn differing_fields(local: &Value, remote: &Value) -> Vec<String> {
-    let ignored = [
-        "id",
-        "owner_user_id",
-        "remote_version",
-        "image_local_name",
-        "image_remote_path",
-        "image_sync_state",
-        "imageFileName",
-    ];
+    let ignored = ["id", "owner_user_id", "remote_version", "imageFileName"];
     let keys = local
         .as_object()
         .into_iter()
@@ -819,7 +1220,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cloud_payload_never_contains_local_image_metadata() {
+    fn cloud_todo_payload_never_contains_local_image_metadata() {
         let item = TodoItem {
             id: "todo".to_owned(),
             title: "One".to_owned(),
@@ -836,8 +1237,9 @@ mod tests {
             remote_version: None,
         };
         let remote = remote_todo("main", 0, &item, "owner");
-        assert_eq!(remote.image_local_name, None);
-        assert_eq!(remote.image_remote_path, None);
-        assert_eq!(remote.image_sync_state, "LOCAL_ONLY");
+        let json = serde_json::to_value(remote).unwrap();
+        assert!(json.get("image_local_name").is_none());
+        assert!(json.get("image_remote_path").is_none());
+        assert!(json.get("image_sync_state").is_none());
     }
 }

@@ -37,7 +37,14 @@ pub async fn sync_now(
         insecure_http: true,
         ..runtime.snapshot.sync.clone()
     };
-    let result = run_sync(&state.cloud, &repository, &session, &mut runtime.snapshot).await;
+    let result = run_sync(
+        &state.cloud,
+        &repository,
+        &session,
+        &mut runtime.snapshot,
+        &state.paths.attachments,
+    )
+    .await;
     runtime.snapshot.revision += 1;
     match result {
         Ok(view) => runtime.snapshot.sync = view,

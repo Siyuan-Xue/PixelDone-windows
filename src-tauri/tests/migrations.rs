@@ -1,4 +1,7 @@
-use pixeldone_windows_lib::{domain::AppSnapshot, infrastructure::repository::SqliteRepository};
+use pixeldone_windows_lib::{
+    domain::AppSnapshot,
+    infrastructure::{db::LocalTodoAttachment, repository::SqliteRepository},
+};
 
 #[test]
 fn migrations_persist_and_reload_the_initial_snapshot() {
@@ -19,6 +22,20 @@ fn migrations_persist_and_reload_the_initial_snapshot() {
             .save_snapshot(&snapshot)
             .await
             .expect("snapshot should persist");
+        repository
+            .save_attachment(&LocalTodoAttachment {
+                todo_id: "migration-image".to_owned(),
+                local_file_name: Some("migration-image.png".to_owned()),
+                updated_at_millis: 43,
+                sync_state: "PENDING_UPLOAD".to_owned(),
+                ..LocalTodoAttachment::default()
+            })
+            .await
+            .expect("attachment metadata should persist");
+        repository
+            .save_snapshot(&snapshot)
+            .await
+            .expect("snapshot replacement should not cascade attachment metadata");
         let restored = repository
             .load_snapshot()
             .await
@@ -26,6 +43,16 @@ fn migrations_persist_and_reload_the_initial_snapshot() {
             .expect("metadata row should exist");
 
         assert_eq!(restored, snapshot);
+        assert_eq!(
+            repository
+                .attachment("migration-image")
+                .await
+                .expect("attachment should load")
+                .expect("attachment should survive snapshot replacement")
+                .local_file_name
+                .as_deref(),
+            Some("migration-image.png")
+        );
         repository.close().await;
         let _ = std::fs::remove_file(database_path);
     });

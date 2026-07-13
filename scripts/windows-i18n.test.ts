@@ -16,4 +16,12 @@ describe('Windows localization', () => {
       expect(windowsMessage(locale as keyof typeof signedOutSyncMessages, 'signInToSyncAndroid')).toBe(expected);
     });
   }
+
+  it('provides password-change labels for every supported locale', () => {
+    for (const locale of Object.keys(signedOutSyncMessages)) {
+      expect(windowsMessage(locale as keyof typeof signedOutSyncMessages, 'changePassword').trim()).not.toBe('');
+      expect(windowsMessage(locale as keyof typeof signedOutSyncMessages, 'currentPassword').trim()).not.toBe('');
+      expect(windowsMessage(locale as keyof typeof signedOutSyncMessages, 'confirmPassword').trim()).not.toBe('');
+    }
+  });
 });
