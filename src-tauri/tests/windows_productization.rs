@@ -5,7 +5,7 @@ fn formal_config_uses_professional_identity_and_protocol() {
     let config: serde_json::Value =
         serde_json::from_str(&fs::read_to_string("tauri.conf.json").unwrap()).unwrap();
     assert_eq!(config["productName"], "PixelDone");
-    assert_eq!(config["version"], "3.2.0");
+    assert_eq!(config["version"], "3.2.1");
     assert_eq!(config["mainBinaryName"], "PixelDone");
     assert_eq!(
         config["plugins"]["deep-link"]["desktop"]["schemes"][0],
@@ -66,9 +66,11 @@ fn notification_identity_uses_stable_aumid_and_stub_clsid() {
 }
 
 #[test]
-fn runtime_preserves_an_installer_created_shortcut_target() {
+fn runtime_preserves_only_the_current_installed_shortcut_target() {
     let source = fs::read_to_string("src/platform/windows/identity.rs").unwrap();
     assert!(source.contains("persist.Load"));
+    assert!(source.contains("existing_shortcut_target"));
+    assert!(source.contains("executable_paths_match"));
     assert!(source.contains("if !preserve_target"));
 }
 
@@ -76,7 +78,7 @@ fn runtime_preserves_an_installer_created_shortcut_target() {
 fn sqlite_migrations_use_the_deployed_windows_line_endings() {
     let attributes = fs::read_to_string("../.gitattributes").unwrap();
     assert!(attributes.contains("src-tauri/migrations/*.sql text eol=crlf"));
-    for version in 1..=6 {
+    for version in (1..=6).chain(std::iter::once(8)) {
         let prefix = format!("{version:04}_");
         let migration = fs::read_dir("migrations")
             .unwrap()

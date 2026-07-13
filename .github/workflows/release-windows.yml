@@ -56,3 +56,12 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --bundles nsis --target x86_64-pc-windows-msvc
+      - name: Finalize release metadata
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bun run release:manifest
+          $directory = 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis'
+          gh release edit $env:GITHUB_REF_NAME --notes-file RELEASE_NOTES.md
+          gh release upload $env:GITHUB_REF_NAME "$directory/PixelDone_3.2.1_x64-setup.exe.sha256" "$directory/latest.json" --clobber

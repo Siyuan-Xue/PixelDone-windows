@@ -79,14 +79,14 @@ describe('PixelDone 3.1.3 desktop layout', () => {
     try {
       await invoke('update_settings', {
         expectedRevision: initial.revision,
-        settings: { ...initial.settings, languageMode: 'ENGLISH', sidebarWidthPx: 256 }
+        settings: { ...initial.settings, languageMode: 'ENGLISH', sidebarWidthPx: 320 }
       });
       await browser.refresh();
       await $('.sidebar-resizer').click();
       await browser.keys(['ArrowRight']);
-      await browser.waitUntil(async () => (await bootstrap()).settings.sidebarWidthPx === 264);
+      await browser.waitUntil(async () => (await bootstrap()).settings.sidebarWidthPx === 328);
       await browser.refresh();
-      expect(Math.round(await $('.sidebar').getSize('width'))).toBe(264);
+      expect(Math.round(await $('.sidebar').getSize('width'))).toBe(328);
 
       let snapshot = await bootstrap();
       await invoke('update_settings', {
@@ -94,18 +94,18 @@ describe('PixelDone 3.1.3 desktop layout', () => {
         settings: { ...snapshot.settings, sidebarWidthPx: 999 }
       });
       await browser.refresh();
-      expect((await bootstrap()).settings.sidebarWidthPx).toBe(420);
-      expect(Math.round(await $('.sidebar').getSize('width'))).toBe(420);
+      expect((await bootstrap()).settings.sidebarWidthPx).toBe(560);
+      expect(Math.round(await $('.sidebar').getSize('width'))).toBe(560);
 
       snapshot = await bootstrap();
       await invoke('update_settings', {
         expectedRevision: snapshot.revision,
-        settings: { ...snapshot.settings, languageMode: 'ARABIC', sidebarWidthPx: 256 }
+        settings: { ...snapshot.settings, languageMode: 'ARABIC', sidebarWidthPx: 320 }
       });
       await browser.refresh();
       await $('.sidebar-resizer').click();
       await browser.keys(['ArrowRight']);
-      await browser.waitUntil(async () => (await bootstrap()).settings.sidebarWidthPx === 248);
+      await browser.waitUntil(async () => (await bootstrap()).settings.sidebarWidthPx === 312);
     } finally {
       const snapshot = await bootstrap();
       await invoke('update_settings', { expectedRevision: snapshot.revision, settings: originalSettings });
@@ -178,7 +178,12 @@ describe('PixelDone 3.1.3 desktop layout', () => {
             ),
             sizes: buttons.map((button) => {
               const rect = button.getBoundingClientRect();
-              return { width: rect.width, height: rect.height, bottom: rect.bottom };
+              return {
+                width: rect.width,
+                height: rect.height,
+                bottom: rect.bottom,
+                plus: button.classList.contains('dock-add')
+              };
             })
           };
         });
@@ -187,9 +192,9 @@ describe('PixelDone 3.1.3 desktop layout', () => {
         if (!metrics) throw new Error('Dock metrics unavailable');
         expect(['flex', 'inline-flex', 'grid', 'inline-grid']).toContain(metrics.display);
         expect(metrics.directChildCount).toBe(DOCK_ACTIONS.length + 1);
-        expect(metrics.gap).toBeGreaterThanOrEqual(4);
+        expect(metrics.gap).toBe(18);
         expect(metrics.sequence).toEqual(expectedDockSequence(placement));
-        expect(metrics.sizes.every(({ width, height }) => Math.abs(width - height) <= 1)).toBe(true);
+        expect(metrics.sizes.every(({ width, height, plus }) => width === (plus ? 56 : 44) && height === (plus ? 56 : 44))).toBe(true);
         expect(new Set(metrics.sizes.map(({ bottom }) => Math.round(bottom))).size).toBe(1);
       }
     } finally {

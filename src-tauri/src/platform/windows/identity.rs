@@ -74,8 +74,11 @@ fn create_start_menu_shortcut(executable: &Path) -> Result<PathBuf, AppError> {
         .map_err(platform_error)?;
     let persist: IPersistFile = link.cast().map_err(platform_error)?;
     let shortcut_wide = wide(&shortcut_path.display().to_string());
-    let preserve_target = shortcut_path.exists()
+    let loaded_existing = shortcut_path.exists()
         && unsafe { persist.Load(PCWSTR(shortcut_wide.as_ptr()), STGM_READWRITE) }.is_ok();
+    let preserve_target = loaded_existing
+        && existing_shortcut_target(&link)
+            .is_some_and(|target| executable_paths_match(&target, executable));
     let executable_wide = wide(&executable.display().to_string());
     let working_directory = executable.parent().unwrap_or_else(|| Path::new(""));
     let working_directory_wide = wide(&working_directory.display().to_string());
@@ -104,6 +107,37 @@ fn create_start_menu_shortcut(executable: &Path) -> Result<PathBuf, AppError> {
 
     unsafe { persist.Save(PCWSTR(shortcut_wide.as_ptr()), true) }.map_err(platform_error)?;
     Ok(shortcut_path)
+}
+
+fn existing_shortcut_target(link: &IShellLinkW) -> Option<PathBuf> {
+    let mut value = vec![0_u16; 32_768];
+    unsafe { link.GetPath(&mut value, std::ptr::null_mut(), 0) }.ok()?;
+    let length = value
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(value.len());
+    (length > 0).then(|| PathBuf::from(String::from_utf16_lossy(&value[..length])))
+}
+
+fn executable_paths_match(existing: &Path, current: &Path) -> bool {
+    if !existing.is_file() || !current.is_file() {
+        return false;
+    }
+    let existing = existing
+        .canonicalize()
+        .unwrap_or_else(|_| existing.to_path_buf());
+    let current = current
+        .canonicalize()
+        .unwrap_or_else(|_| current.to_path_buf());
+    normalize_windows_path(&existing) == normalize_windows_path(&current)
+}
+
+fn normalize_windows_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('/', "\\")
+        .trim_start_matches(r"\\?\")
+        .trim_end_matches('\\')
+        .to_lowercase()
 }
 
 fn set_string_property(
@@ -191,12 +225,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn development_binaries_do_not_rewrite_start_menu_shortcuts() {
+    fn development_binaries_are_detected_before_shortcut_updates() {
         assert!(is_direct_development_binary(Path::new(
             r"C:\repo\src-tauri\target\debug\PixelDone.exe"
         )));
         assert!(!is_direct_development_binary(Path::new(
             r"C:\Users\Miles\AppData\Local\PixelDone\PixelDone.exe"
         )));
+    }
+
+    #[test]
+    fn shortcut_targets_are_preserved_only_for_the_current_executable() {
+        let root = std::env::temp_dir();
+        let current = root.join(format!("pixeldone-current-{}.exe", std::process::id()));
+        let stale = root.join(format!("pixeldone-stale-{}.exe", std::process::id()));
+        std::fs::write(&current, b"current").unwrap();
+        std::fs::write(&stale, b"stale").unwrap();
+
+        assert!(executable_paths_match(&current, &current));
+        assert!(!executable_paths_match(&stale, &current));
+        assert!(!executable_paths_match(
+            &root.join("pixeldone-missing.exe"),
+            &current
+        ));
+
+        let _ = std::fs::remove_file(current);
+        let _ = std::fs::remove_file(stale);
     }
 }

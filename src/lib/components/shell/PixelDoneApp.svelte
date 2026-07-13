@@ -6,8 +6,9 @@
   import TodoDock from '$lib/components/shell/TodoDock.svelte';
   import TodoEditorModal from '$lib/components/shell/TodoEditorModal.svelte';
   import { reconcileEditorMode, type TodoEditorMode } from '$lib/components/shell/editor';
-  import { localeFor, message, type MessageKey } from '$lib/generated/i18n';
-  import { windowsMessage, type WindowsMessageKey } from '$lib/i18n/windows';
+  import { localeFor, type MessageKey } from '$lib/generated/i18n';
+  import type { WindowsMessageKey } from '$lib/i18n/windows';
+  import { uiMessage, uiText, uiWindowsMessage } from '$lib/i18n/presentation';
   import type {
     AppLanguage,
     AppError,
@@ -63,7 +64,7 @@
   let dragStart = $state({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
   let storageInfo = $state<StorageInfo | null>(null);
   let updateProgress = $state<{ downloadedBytes: number; totalBytes: number | null } | null>(null);
-  let sidebarWidth = $state(256);
+  let sidebarWidth = $state(320);
   let resizingSidebar = $state(false);
 
   let selectedList = $derived(
@@ -133,11 +134,11 @@
   });
 
   function t(key: MessageKey): string {
-    return message(locale, key);
+    return uiMessage(locale, key);
   }
 
   function wt(key: WindowsMessageKey): string {
-    return windowsMessage(locale, key);
+    return uiWindowsMessage(locale, key);
   }
 
   function syncStateLabel(): string {
@@ -157,7 +158,7 @@
 
   function syncDetailMessage(): string {
     if (snapshot.sync.state === 'SIGNED_OUT') return wt('signInToSyncAndroid');
-    return snapshot.sync.message ?? syncStateLabel();
+    return uiText(snapshot.sync.message ?? syncStateLabel());
   }
 
   function formatBytes(bytes: number): string {
@@ -182,7 +183,7 @@
   }
 
   function clampSidebarWidth(value: number): number {
-    return Math.min(420, Math.max(220, Math.round(value)));
+    return Math.min(560, Math.max(200, Math.round(value)));
   }
 
   function sidebarWidthFromPointer(clientX: number): number {
@@ -218,7 +219,7 @@
 
   async function resizeSidebarWithKeyboard(event: KeyboardEvent): Promise<void> {
     let next = sidebarWidth;
-    if (event.key === 'Home') next = 256;
+    if (event.key === 'Home') next = 320;
     else if (event.key === 'ArrowRight') next += rtl ? -8 : 8;
     else if (event.key === 'ArrowLeft') next += rtl ? 8 : -8;
     else return;
@@ -232,7 +233,7 @@
     const pointerMove = (event: PointerEvent) => moveSidebarResize(event);
     const pointerUp = (event: PointerEvent) => void finishSidebarResize(event);
     const keyDown = (event: KeyboardEvent) => void resizeSidebarWithKeyboard(event);
-    const doubleClick = () => void persistSidebarWidth(256);
+    const doubleClick = () => void persistSidebarWidth(320);
     node.addEventListener('pointerdown', pointerDown);
     node.addEventListener('pointermove', pointerMove);
     node.addEventListener('pointerup', pointerUp);
@@ -547,9 +548,30 @@
     return t(item.reminderRepeat === 'NONE' ? 'repeat_none' : item.reminderRepeat === 'DAILY' ? 'repeat_daily' : 'repeat_weekly');
   }
 
+  function priorityLabel(priority: TodoPriority): string {
+    return t(priority === 'XHIGH' ? 'priority_xhigh'
+      : priority === 'HIGH' ? 'priority_high'
+        : priority === 'MEDIUM' ? 'priority_medium'
+          : 'priority_low');
+  }
+
+  function checklistDisplayName(list: Checklist): string {
+    if (list.kind === 'SETTINGS') return t('options');
+    if (list.kind === 'TRASH') return t('field_trash');
+    return list.name;
+  }
+
+  function dockSettingsLabel(action: DockAction): string {
+    return t(action === 'SORT' ? 'sort'
+      : action === 'DEADLINE' ? 'deadline_short'
+        : action === 'HIDE_DONE' ? 'hide_done'
+          : action === 'DELETE_DONE' ? 'clean_done'
+            : 'quick_delete');
+  }
+
   function errorText(error: unknown): string {
-    if (typeof error === 'string') return error;
-    if (error && typeof error === 'object' && 'message' in error) return String(error.message);
+    if (typeof error === 'string') return uiText(error);
+    if (error && typeof error === 'object' && 'message' in error) return uiText(String(error.message));
     return t('error');
   }
 
@@ -625,7 +647,7 @@
       <nav class="special-nav" aria-label={t('app_options')}>
         {#each specialLists as list (list.id)}
           <button class:active={list.id === snapshot.selectedChecklistId} class="special-row" onclick={() => void chooseChecklist(list.id)}>
-            <span class="nav-icon"><Icon name={list.kind === 'TRASH' ? 'trash' : 'settings'} /></span><span>{list.name}</span>
+            <span class="nav-icon"><Icon name={list.kind === 'TRASH' ? 'trash' : 'settings'} /></span><span>{checklistDisplayName(list)}</span>
             {#if list.kind === 'TRASH' && list.items.length}<span class="nav-count">{list.items.length}</span>{/if}
           </button>
         {/each}
@@ -643,8 +665,8 @@
         role="separator"
         aria-label={wt('checklists')}
         aria-orientation="vertical"
-        aria-valuemin="220"
-        aria-valuemax="420"
+        aria-valuemin="200"
+        aria-valuemax="560"
         aria-valuenow={sidebarWidth}
       ></div>
     </aside>
@@ -654,7 +676,7 @@
         <div class="title-stack status-title">
           <div class="title-line">
             {#if snapshot.checklistHistory.length}<button class="icon-button" title="Alt+Left" onclick={() => void commit(api.backChecklist(snapshot.revision))}><Icon name="back" /></button>{/if}
-            <h2 dir="auto">{selectedList.name}</h2>
+            <h2 dir="auto">{checklistDisplayName(selectedList)}</h2>
             {#if selectedList.kind === 'NORMAL'}<span class="status-counts"><span class="status-count">{wt('active')} {selectedList.items.filter((item) => !item.completed).length}</span><span class="status-count">{wt('done')} {selectedList.items.filter((item) => item.completed).length}</span></span>{/if}
           </div>
         </div>
@@ -666,7 +688,7 @@
       </header>
 
       {#if snapshot.settings.enhancedXhighAlarmEnabled && snapshot.reminder.activeTodoIds.length}
-        <div class="workspace-alert"><strong>{wt('alarmRinging')}</strong><button class="quiet-button" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('openSettings')}</button></div>
+        <div class="workspace-alert"><strong>{wt('alarmRinging')}</strong><button class="quiet-button" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{t('options')}</button></div>
       {/if}
 
       {#if errorMessage}
@@ -685,7 +707,7 @@
             {#each activeItems as item (item.id)}
               <article class:completed={item.completed} class:selected={item.id === selectedTodoId} class:held={completionHold[item.id]} class:highlighted={highlightedTodoId === item.id} class="task-row priority-{item.priority.toLowerCase()}">
                 <button class:checked={item.completed} class="completion-control" aria-label={item.completed ? t('show') : t('hide')} onclick={(event) => { event.stopPropagation(); void toggleTodo(item); }}>{#if item.completed}<Icon name="check" size={12} />{/if}</button>
-                <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto">{item.title}</strong>{#if !item.completed}<span class:overdue={item.dueAtMillis > 0 && item.dueAtMillis <= Date.now()}>{#if item.priority === 'XHIGH'}<Icon name="alarm" size={13} /> {/if}{formatDue(item)} · {item.priority} · {repeatText(item)}</span>{/if}</button>
+                <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto">{item.title}</strong>{#if !item.completed}<span class:overdue={item.dueAtMillis > 0 && item.dueAtMillis <= Date.now()}>{#if item.priority === 'XHIGH'}<Icon name="alarm" size={13} /> {/if}{formatDue(item)} · {priorityLabel(item.priority)} · {repeatText(item)}</span>{/if}</button>
                 {#if item.imageFileName}<button class="attachment-badge" onclick={(event) => { event.stopPropagation(); void showImagePreview(item.id); }}><Icon name="image" /></button>{/if}
                 {#if snapshot.quickDelete}<button class="delete-slot" onclick={(event) => { event.stopPropagation(); selectedTodoId = item.id; void moveSelectedToTrash(); }}>{t('delete')}</button>{/if}
               </article>
@@ -758,23 +780,23 @@
                 <div class="auth-modes"><button type="button" class:active={authMode === 'sign-in'} onclick={() => (authMode = 'sign-in')}>{t('sign_in')}</button><button type="button" class:active={authMode === 'sign-up'} onclick={() => (authMode = 'sign-up')}>{t('sign_up')}</button></div>
                 <input id="auth-email" type="email" placeholder={t('email')} bind:value={authEmail} />
                 <input type="password" placeholder={t('password')} bind:value={authPassword} />
-                <div class="auth-buttons"><button class="primary-button" disabled={authBusy}>{authMode === 'sign-in' ? t('sign_in') : t('sign_up')}</button></div>
+                <div class="auth-buttons"><button class="setting-icon-button primary" type="submit" title={authMode === 'sign-in' ? t('sign_in') : t('sign_up')} aria-label={authMode === 'sign-in' ? t('sign_in') : t('sign_up')} disabled={authBusy}><Icon name="login" size={22} /></button></div>
               </form>
             {:else}
               <div class="setting-row">
                 <div><strong>{wt('changePassword')}</strong><p>{snapshot.auth.userEmail}</p></div>
-                <button class="quiet-button" onclick={() => (passwordEditorOpen = !passwordEditorOpen)}>{wt('changePassword')}</button>
+                <button class="setting-icon-button" title={wt('changePassword')} aria-label={wt('changePassword')} onclick={() => (passwordEditorOpen = !passwordEditorOpen)}><Icon name="key" size={20} /></button>
               </div>
               {#if passwordEditorOpen}
                 <form class="auth-form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
                   <input type="password" autocomplete="current-password" placeholder={wt('currentPassword')} bind:value={currentPassword} />
                   <input type="password" autocomplete="new-password" placeholder={wt('newPassword')} bind:value={newPassword} />
                   <input type="password" autocomplete="new-password" placeholder={wt('confirmPassword')} bind:value={confirmPassword} />
-                  <div class="auth-buttons"><button class="primary-button" disabled={passwordBusy}>{passwordBusy ? wt('changingPassword') : wt('changePassword')}</button></div>
+                  <div class="auth-buttons"><button class="setting-icon-button primary" type="submit" title={passwordBusy ? wt('changingPassword') : wt('changePassword')} aria-label={passwordBusy ? wt('changingPassword') : wt('changePassword')} disabled={passwordBusy}><Icon name="key" size={20} /></button></div>
                 </form>
               {/if}
             {/if}
-            <div class="setting-row"><div><strong>{t('sync')}</strong><p data-testid="sync-detail">{syncDetailMessage()}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.sync.conflictCount}<button class="primary-button" onclick={() => void openConflicts()}>{t('review')} {snapshot.sync.conflictCount}</button>{/if}</div></div>
+            <div class="setting-row"><div><strong>{t('sync')}</strong><p data-testid="sync-detail">{syncDetailMessage()}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.sync.conflictCount}<button class="setting-icon-button primary" title={`${t('review')} ${snapshot.sync.conflictCount}`} aria-label={`${t('review')} ${snapshot.sync.conflictCount}`} onclick={() => void openConflicts()}><Icon name="conflict" size={20} /></button>{/if}</div></div>
           </section>
 
           <section>
@@ -791,15 +813,15 @@
 
           <section>
             <span class="section-label">{t('settings_dock')}</span>
-            <div class="segmented-row">{#each ['LEFT_EDGE', 'CENTER', 'RIGHT_EDGE'] as placement}<button class="dock-placement-button" data-placement={placement} class:active={snapshot.settings.dock.plusPlacement === placement} onclick={() => void setDockPlacement(placement as DockPlusPlacement)}>{placement}</button>{/each}</div>
-            <div class="dock-choice-grid">{#each allDockActions as action}<button class:selected={snapshot.settings.dock.actions.includes(action)} onclick={() => void toggleDockAction(action)}><span class="pixel-choice"></span>{action}</button>{/each}</div>
+            <div class="segmented-row">{#each ['LEFT_EDGE', 'CENTER', 'RIGHT_EDGE'] as placement}<button class="dock-placement-button" data-placement={placement} class:active={snapshot.settings.dock.plusPlacement === placement} title={t(placement === 'LEFT_EDGE' ? 'left' : placement === 'CENTER' ? 'center' : 'right')} aria-label={t(placement === 'LEFT_EDGE' ? 'left' : placement === 'CENTER' ? 'center' : 'right')} onclick={() => void setDockPlacement(placement as DockPlusPlacement)}><span class="placement-track"><span class="placement-plus">+</span></span></button>{/each}</div>
+            <div class="dock-choice-grid">{#each allDockActions as action}<button class:selected={snapshot.settings.dock.actions.includes(action)} title={dockSettingsLabel(action)} aria-label={dockSettingsLabel(action)} aria-pressed={snapshot.settings.dock.actions.includes(action)} onclick={() => void toggleDockAction(action)}><Icon name={action === 'SORT' ? 'sort' : action === 'DEADLINE' ? 'calendar' : action === 'HIDE_DONE' ? 'hide' : action === 'DELETE_DONE' ? 'trash-check' : 'batch-delete'} size={20} active={action === 'SORT' && snapshot.sortMode === 'TIME'} /></button>{/each}</div>
           </section>
 
           <section>
             <span class="section-label">{t('settings_updates')}</span>
             <div class="setting-row"><div><strong>{wt('automaticUpdateChecks')}</strong><p>{wt('automaticUpdateChecksDetail')}</p></div><button aria-label={wt('automaticUpdateChecks')} class:active={snapshot.settings.automaticUpdateCheckEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, automaticUpdateCheckEnabled: !snapshot.settings.automaticUpdateCheckEnabled })}><span></span></button></div>
-            <div class="setting-row"><div><strong>{wt('currentVersion')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS{#if snapshot.update.message} · {snapshot.update.message}{/if}</p></div><button class="quiet-button" onclick={() => void commit(api.checkForUpdate(snapshot.revision))}>{t('check_update')}</button></div>
-            {#if snapshot.update.state === 'AVAILABLE'}<button class="primary-button" onclick={() => { updateProgress = { downloadedBytes: 0, totalBytes: null }; void api.installUpdate(); }}>{t('install_updates')} {snapshot.update.availableVersion}</button>{/if}
+            <div class="setting-row"><div><strong>{wt('currentVersion')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS{#if snapshot.update.message} · {uiText(snapshot.update.message)}{/if}</p></div><button class="setting-icon-button" title={t('check_update')} aria-label={t('check_update')} onclick={() => void commit(api.checkForUpdate(snapshot.revision))}><Icon name="update" size={20} /></button></div>
+            {#if snapshot.update.state === 'AVAILABLE'}<button class="setting-icon-button primary section-action" title={`${t('install_updates')} ${snapshot.update.availableVersion}`} aria-label={`${t('install_updates')} ${snapshot.update.availableVersion}`} onclick={() => { updateProgress = { downloadedBytes: 0, totalBytes: null }; void api.installUpdate(); }}><Icon name="download" size={20} /></button>{/if}
             {#if updateProgress}<p class="update-progress">{wt('downloading')} {formatBytes(updateProgress.downloadedBytes)}{#if updateProgress.totalBytes} / {formatBytes(updateProgress.totalBytes)}{/if}</p>{/if}
           </section>
 
@@ -807,18 +829,18 @@
             <span class="section-label">{wt('windowsIntegration')}</span>
             <div class="setting-row"><div><strong>{wt('startWithWindows')}</strong><p>{wt('startWithWindowsDetail')}</p></div><button aria-label={wt('startWithWindows')} class:active={snapshot.settings.autostartEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, autostartEnabled: !snapshot.settings.autostartEnabled })}><span></span></button></div>
             <div class="setting-row"><div><strong>{wt('enhancedAlarm')}</strong><p>{wt('enhancedAlarmDetail')}</p></div><button aria-label={wt('enhancedAlarm')} class:active={snapshot.settings.enhancedXhighAlarmEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, enhancedXhighAlarmEnabled: !snapshot.settings.enhancedXhighAlarmEnabled })}><span></span></button></div>
-            <div class="setting-row"><div><strong>{wt('reminderQueue')}</strong><p>{snapshot.reminder.scheduledCount} · {snapshot.reminder.state}{#if snapshot.reminder.message} · {snapshot.reminder.message}{/if}</p></div></div>
+            <div class="setting-row"><div><strong>{wt('reminderQueue')}</strong><p>{snapshot.reminder.scheduledCount} · {snapshot.reminder.state}{#if snapshot.reminder.message} · {uiText(snapshot.reminder.message)}{/if}</p></div></div>
           </section>
 
           <section>
             <span class="section-label">{wt('storagePrivacy')}</span>
             {#if storageInfo}
               <div class="setting-row storage-row"><div><strong>{wt('application')}</strong><p><code>{storageInfo.executablePath}</code></p></div></div>
-              <div class="setting-row storage-row"><div><strong>{wt('localData')}</strong><p><code>{storageInfo.dataRoot}</code> · {formatBytes(storageInfo.totalBytes)}</p></div><button class="quiet-button" onclick={() => void api.openDataFolder()}>{wt('openFolder')}</button></div>
+              <div class="setting-row storage-row"><div><strong>{wt('localData')}</strong><p><code>{storageInfo.dataRoot}</code> · {formatBytes(storageInfo.totalBytes)}</p></div><button class="setting-icon-button" title={wt('openFolder')} aria-label={wt('openFolder')} onclick={() => void api.openDataFolder()}><Icon name="folder" size={20} /></button></div>
               <div class="setting-row storage-row"><div><strong>SQLite</strong><p><code>{storageInfo.databasePath}</code></p></div></div>
               <div class="setting-row storage-row"><div><strong>WebView2</strong><p><code>{storageInfo.webviewDataPath}</code></p></div></div>
               <div class="setting-row storage-row"><div><strong>Windows Credential Manager</strong><p><code>{storageInfo.credentialManagerTarget}</code></p></div></div>
-              {#if storageInfo.legacyRoamingDatabasePath}<div class="setting-row storage-row"><div><strong>{wt('legacyDataFound')}</strong><p><code>{storageInfo.legacyRoamingDatabasePath}</code> · {formatBytes(storageInfo.legacyRoamingDatabaseBytes ?? 0)}</p></div><button class="danger-button" onclick={() => void deleteLegacyData()}>{t('delete')}</button></div>{/if}
+              {#if storageInfo.legacyRoamingDatabasePath}<div class="setting-row storage-row"><div><strong>{wt('legacyDataFound')}</strong><p><code>{storageInfo.legacyRoamingDatabasePath}</code> · {formatBytes(storageInfo.legacyRoamingDatabaseBytes ?? 0)}</p></div><button class="setting-icon-button danger" title={t('delete')} aria-label={t('delete')} onclick={() => void deleteLegacyData()}><Icon name="trash" size={20} /></button></div>{/if}
             {/if}
           </section>
           </div>

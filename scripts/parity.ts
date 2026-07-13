@@ -18,8 +18,9 @@ export interface ParityManifest {
   windowsTarget: {
     product: string;
     version: string;
-    stage: 'release_candidate' | 'released';
+    stage: 'release_candidate' | 'formal_release';
     evidence: string[];
+    authorizedIncompleteRows?: string[];
   };
   rows: ParityRow[];
 }
@@ -42,7 +43,7 @@ interface ParityReleaseOverlay {
   rowOverrides?: Record<string, Partial<ParityRow>>;
 }
 
-export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.2.0.yaml';
+export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.2.1.yaml';
 
 export async function loadManifest(): Promise<ParityManifest> {
   const overlayUrl = new URL(`../${CURRENT_PARITY_MANIFEST}`, import.meta.url);

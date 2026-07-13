@@ -41,7 +41,7 @@
         title={`${addLabel} · Ctrl+N`}
         aria-label={addLabel}
         onclick={(event) => onAdd(event.currentTarget)}
-      ><Icon name="plus" size={24} /></button>
+      ><span class="dock-plus-symbol" aria-hidden="true">+</span></button>
     {:else}
       <button
         class:active={active(item.action)}
@@ -53,7 +53,7 @@
         aria-label={labelFor(item.action)}
         aria-pressed={active(item.action)}
         onclick={() => onAction(item.action)}
-      ><Icon name={actionIcons[item.action]} size={22} /></button>
+      ><Icon name={actionIcons[item.action]} size={22} active={item.action === 'SORT' && active(item.action)} /></button>
     {/if}
   {/each}
 </div>

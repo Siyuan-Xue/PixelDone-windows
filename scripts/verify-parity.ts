@@ -7,8 +7,8 @@ const allowed = new Set(['not_started', 'in_progress', 'blocked', 'verified']);
 const failures: string[] = [];
 const root = fileURLToPath(new URL('..', import.meta.url));
 
-if (manifest.windowsTarget.version !== '3.2.0') {
-  failures.push(`release target: expected Windows 3.2.0, found ${manifest.windowsTarget.version}`);
+if (manifest.windowsTarget.version !== '3.2.1') {
+  failures.push(`release target: expected Windows 3.2.1, found ${manifest.windowsTarget.version}`);
 }
 for (const path of manifest.windowsTarget.evidence) {
   if (!existsSync(`${root}/${path}`)) failures.push(`release target: evidence file not found ${path}`);
@@ -34,14 +34,41 @@ for (const row of manifest.rows) {
 }
 
 const summary = summarize(manifest);
-if (summary.percent !== 100 || summary.counts.blocked || summary.counts.in_progress || summary.counts.not_started) {
+const incompleteRows = manifest.rows.filter((row) => row.requiredForRelease && row.status !== 'verified');
+const authorizedIncompleteRows = new Set(manifest.windowsTarget.authorizedIncompleteRows ?? []);
+const unauthorizedIncompleteRows = incompleteRows.filter((row) => !authorizedIncompleteRows.has(row.id));
+const staleAuthorizations = [...authorizedIncompleteRows].filter(
+  (id) => !incompleteRows.some((row) => row.id === id)
+);
+const authorizedFormalRelease = manifest.windowsTarget.stage === 'formal_release'
+  && incompleteRows.length > 0
+  && unauthorizedIncompleteRows.length === 0
+  && staleAuthorizations.length === 0;
+
+if (
+  (summary.percent !== 100 || summary.counts.blocked || summary.counts.in_progress || summary.counts.not_started)
+  && !authorizedFormalRelease
+) {
   failures.push(
     `release gate: ${summary.percent.toFixed(2)}%, ${summary.counts.blocked} blocked, ${summary.counts.in_progress} in_progress, ${summary.counts.not_started} not_started`
   );
+}
+
+if (unauthorizedIncompleteRows.length) {
+  failures.push(`release authorization: missing rows ${unauthorizedIncompleteRows.map((row) => row.id).join(', ')}`);
+}
+if (staleAuthorizations.length) {
+  failures.push(`release authorization: stale rows ${staleAuthorizations.join(', ')}`);
 }
 
 if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('PixelDone parity gate: 100.00%');
+if (authorizedFormalRelease) {
+  console.log(
+    `PixelDone parity gate: explicitly authorized formal release at ${summary.percent.toFixed(2)}%; incomplete rows remain unverified`
+  );
+} else {
+  console.log('PixelDone parity gate: 100.00%');
+}

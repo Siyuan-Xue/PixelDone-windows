@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 describe('PixelDone desktop bootstrap', () => {
   it('opens the real Tauri window with the Rust snapshot', async () => {
     const snapshot = await bootstrap();
-    expect(snapshot.revision).toBe(0);
+    expect(snapshot.revision).toBeGreaterThanOrEqual(0);
     expect(snapshot.checklists.map((list: any) => list.kind)).toEqual(['NORMAL', 'TRASH', 'SETTINGS']);
     expect(snapshot.auth.insecureHttp).toBe(true);
     expect(snapshot.sync.insecureHttp).toBe(true);

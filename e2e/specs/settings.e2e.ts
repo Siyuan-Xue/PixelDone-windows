@@ -18,7 +18,7 @@ describe('Settings parity', () => {
     });
     await browser.refresh();
     await expect($('.app-shell.rtl')).toBeDisplayed();
-    await expect($('[data-testid="sync-detail"]')).toHaveText('سجّل الدخول للمزامنة مع Android.');
+    await expect($('[data-testid="sync-detail"]')).toHaveText('سجّل الدخول للمزامنة مع Android');
     const rtlLabels = await $$('.language-grid button').map((button) => button.getText());
     expect(rtlLabels).toContain('English');
     expect(rtlLabels).toContain('العربية');
@@ -40,7 +40,8 @@ describe('Settings parity', () => {
     });
     await browser.refresh();
     await expect($('.language-grid')).toBeDisplayed();
-    await expect($('[data-testid="sync-detail"]')).toHaveText('Sign in to sync with Android.');
+    await expect($('[data-testid="sync-detail"]')).toHaveText('Sign in to sync with Android');
+    await expect($('.workspace-status h2')).toHaveText('Options');
     const ltrChoices = await browser.execute(() =>
       Array.from(document.querySelectorAll<HTMLElement>('.language-grid button')).map((button) => {
         const buttonRect = button.getBoundingClientRect();
@@ -59,6 +60,21 @@ describe('Settings parity', () => {
     );
     expect(switchSizes.length).toBeGreaterThan(2);
     expect(switchSizes.every(({ width, height }) => width === 44 && height === 26)).toBe(true);
+
+    const actionButtons = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('.settings-page .setting-icon-button')).map((control) => {
+        const rect = control.getBoundingClientRect();
+        return {
+          width: rect.width,
+          height: rect.height,
+          text: control.innerText.trim(),
+          label: control.getAttribute('aria-label') ?? ''
+        };
+      })
+    );
+    expect(actionButtons.length).toBeGreaterThan(2);
+    expect(actionButtons.every(({ width, height }) => width === 44 && height === 44)).toBe(true);
+    expect(actionButtons.every(({ text, label }) => text === '' && label.length > 0)).toBe(true);
 
   });
 });

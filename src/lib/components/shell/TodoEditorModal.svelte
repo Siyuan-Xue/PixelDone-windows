@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '$lib/components/common/Icon.svelte';
-  import { message, type Locale, type MessageKey } from '$lib/generated/i18n';
+  import { type Locale, type MessageKey } from '$lib/generated/i18n';
+  import { uiMessage } from '$lib/i18n/presentation';
   import type { TodoDraft, TodoItem, TodoPriority } from '$lib/generated/ipc';
   import { dateTimeLocalValue, millisFromDateTimeLocal } from '$lib/ipc/client';
   import type { TodoEditorMode } from './editor';
@@ -37,7 +38,7 @@
   let titleInput: HTMLInputElement;
 
   function t(key: MessageKey): string {
-    return message(locale, key);
+    return uiMessage(locale, key);
   }
 
   function update(patch: Partial<TodoDraft>): void {

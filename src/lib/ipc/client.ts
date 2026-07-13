@@ -39,12 +39,12 @@ let browserSnapshot: AppSnapshot = {
     ,autostartEnabled: true
     ,automaticUpdateCheckEnabled: true
     ,enhancedXhighAlarmEnabled: false
-    ,sidebarWidthPx: 256
+    ,sidebarWidthPx: 320
   },
   auth: { cloudAvailable: true, signedIn: false, userId: null, userEmail: null, insecureHttp: true },
   sync: { state: 'SIGNED_OUT', message: '浏览器预览模式', remoteVersion: null, pendingCount: 0, conflictCount: 0, insecureHttp: true },
   reminder: { state: 'IDLE', activeTodoIds: [], lastFiredAtMillis: null, scheduledCount: 0, scheduleHorizonAtMillis: null, scheduleTruncated: false, message: null },
-  update: { state: 'CURRENT', currentVersion: '3.2.0', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
+  update: { state: 'CURRENT', currentVersion: '3.2.1', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
   checklists: [
     {
       id: 'main',

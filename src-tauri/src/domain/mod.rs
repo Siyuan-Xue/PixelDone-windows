@@ -22,9 +22,9 @@ pub const TRASH_CHECKLIST_ID: &str = "trash";
 pub const TRASH_CHECKLIST_NAME: &str = "TRASH";
 pub const SETTINGS_CHECKLIST_ID: &str = "settings";
 pub const SETTINGS_CHECKLIST_NAME: &str = "SETTINGS";
-pub const DEFAULT_SIDEBAR_WIDTH_PX: i64 = 256;
-pub const MIN_SIDEBAR_WIDTH_PX: i64 = 220;
-pub const MAX_SIDEBAR_WIDTH_PX: i64 = 420;
+pub const DEFAULT_SIDEBAR_WIDTH_PX: i64 = 320;
+pub const MIN_SIDEBAR_WIDTH_PX: i64 = 200;
+pub const MAX_SIDEBAR_WIDTH_PX: i64 = 560;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

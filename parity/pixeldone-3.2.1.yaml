@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 2,
+  "baselineManifest": "pixeldone-3.1.0.yaml",
+  "windowsTarget": {
+    "product": "PixelDone Windows",
+    "version": "3.2.1",
+    "stage": "formal_release",
+    "evidence": ["parity/evidence/windows/candidate-3.2.1.md"],
+    "authorizedIncompleteRows": [
+      "IMAGE-LOCAL-001",
+      "AUTH-001",
+      "SYNC-MANUAL-001",
+      "SYNC-CAS-001",
+      "SYNC-IMAGE-LOCAL-001",
+      "IMAGE-CLOUD-EXCLUDED"
+    ]
+  },
+  "rowOverrides": {
+    "AUTH-001": {
+      "title": "注册、登录、退出与验证旧密码后的密码修改/全局退出",
+      "variance": "none"
+    },
+    "SYNC-IMAGE-LOCAL-001": {
+      "title": "图片传输与待办正文同步解耦，失败不阻塞普通同步",
+      "variance": "none",
+      "android": {
+        "source": ["app/src/main/java/com/milesxue/pixeldone/data/sync/TodoAttachmentSyncService.kt"],
+        "tests": ["TodoSyncCoordinatorTest", "SupabaseRemoteTodoDataSourceTest"]
+      },
+      "windows": {
+        "rustSource": ["src-tauri/src/infrastructure/sync/mod.rs", "src-tauri/migrations/0007_attachment_sync.sql"],
+        "uiEntry": ["src/lib/components/shell/PixelDoneApp.svelte"],
+        "tests": ["src-tauri/src/infrastructure/sync/mod.rs", "e2e/specs/image.e2e.ts"]
+      }
+    },
+    "IMAGE-CLOUD-EXCLUDED": {
+      "area": "image",
+      "title": "私有 Supabase Storage 原图上传、按需下载、跨端替换与清理",
+      "requiredForRelease": true,
+      "variance": "none",
+      "android": {
+        "source": ["app/src/main/java/com/milesxue/pixeldone/data/sync/TodoAttachmentSyncService.kt", "docs/pixeldone-supabase-3.2.0-storage-policies.sql", "docs/pixeldone-supabase-3.2.0-migration.sql"],
+        "tests": ["SupabaseRemoteTodoDataSourceTest", "TodoEntityMapperTest"]
+      },
+      "windows": {
+        "rustSource": ["src-tauri/src/infrastructure/auth/mod.rs", "src-tauri/src/infrastructure/sync/mod.rs", "src-tauri/migrations/0007_attachment_sync.sql"],
+        "uiEntry": ["src/lib/components/shell/PixelDoneApp.svelte"],
+        "tests": ["src-tauri/src/infrastructure/sync/mod.rs", "src-tauri/src/application/commands/image.rs"]
+      },
+      "evidence": {
+        "android": ["parity/evidence/android/candidate-3.2.0.md"],
+        "windows": ["parity/evidence/windows/candidate-3.2.0.md"]
+      }
+    }
+  },
+  "overrideGroups": [
+    {
+      "id": "cross-platform-cloud-3.2.0",
+      "rows": [
+        "IMAGE-LOCAL-001", "AUTH-001", "SYNC-MANUAL-001", "SYNC-CAS-001",
+        "SYNC-IMAGE-LOCAL-001", "IMAGE-CLOUD-EXCLUDED"
+      ],
+      "status": "in_progress",
+      "windowsEvidence": ["parity/evidence/windows/candidate-3.2.0.md"],
+      "windowsTests": ["src-tauri/src/infrastructure/sync/mod.rs", "src-tauri/src/infrastructure/realtime/mod.rs"]
+    },
+    {
+      "id": "release-build-3.2.1",
+      "rows": ["RELEASE-NSIS-001"],
+      "status": "verified",
+      "windowsEvidence": ["parity/evidence/windows/candidate-3.2.1.md"]
+    }
+  ]
+}

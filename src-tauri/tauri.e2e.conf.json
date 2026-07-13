@@ -1,5 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "com.milesxue.pixeldone.windows.e2e",
   "build": {
     "beforeBuildCommand": "bun run build:e2e"
   },

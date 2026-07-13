@@ -3,6 +3,7 @@ import { bootstrap, invoke } from '../helpers';
 describe('Todo and Dock parity', () => {
   it('persists fields, completion and list view controls', async () => {
     let snapshot = await bootstrap();
+    const originalSettings = snapshot.settings;
     const checklistId = snapshot.checklists.find((list: any) => list.kind === 'NORMAL').id;
     const dueAtMillis = Date.now() + 86_400_000;
     const created = await invoke('create_todo', {
@@ -24,10 +25,21 @@ describe('Todo and Dock parity', () => {
     const visible = await invoke('set_hide_completed', { expectedRevision: snapshot.revision, hideCompleted: false });
     const reactivated = await invoke('toggle_todo', { expectedRevision: visible.revision, checklistId, todoId });
     await invoke('select_checklist', { expectedRevision: reactivated.revision, checklistId });
+    snapshot = await bootstrap();
+    await invoke('update_settings', {
+      expectedRevision: snapshot.revision,
+      settings: { ...snapshot.settings, languageMode: 'SIMPLIFIED_CHINESE' }
+    });
     await browser.refresh();
     const row = await $(`//*[contains(@class,'task-row')][.//strong[text()='E2E TODO']]`);
     await expect(row).toBeDisplayed();
-    await row.$('button.completion-control').click();
+    const metadata = await row.$('.task-copy span').getText();
+    expect(metadata).toContain('超高');
+    expect(metadata).not.toContain('XHIGH');
+    const completion = await row.$('button.completion-control');
+    expect(await completion.getSize('width')).toBe(28);
+    expect(await completion.getSize('height')).toBe(28);
+    await completion.click();
     expect(await row.getAttribute('class')).toContain('held');
     await browser.waitUntil(async () => {
       const completedRow = await $(`//*[contains(@class,'task-row')][.//strong[text()='E2E TODO']]`);
@@ -37,5 +49,8 @@ describe('Todo and Dock parity', () => {
     const completedRow = await $(`//*[contains(@class,'task-row')][.//strong[text()='E2E TODO']]`);
     expect(await completedRow.getAttribute('class')).not.toContain('held');
     expect(await completedRow.getAttribute('class')).toContain('completed');
+
+    snapshot = await bootstrap();
+    await invoke('update_settings', { expectedRevision: snapshot.revision, settings: originalSettings });
   });
 });
