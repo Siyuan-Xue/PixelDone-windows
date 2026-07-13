@@ -41,7 +41,7 @@ interface ParityReleaseOverlay {
   overrideGroups: ParityOverrideGroup[];
 }
 
-export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.1.2.yaml';
+export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.1.3.yaml';
 
 export async function loadManifest(): Promise<ParityManifest> {
   const overlayUrl = new URL(`../${CURRENT_PARITY_MANIFEST}`, import.meta.url);

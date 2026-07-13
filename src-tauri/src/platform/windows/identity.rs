@@ -12,7 +12,7 @@ use windows::{
             },
             Com::{
                 CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-                CoTaskMemAlloc, CoTaskMemFree, CoUninitialize, IPersistFile,
+                CoTaskMemAlloc, CoTaskMemFree, CoUninitialize, IPersistFile, STGM_READWRITE,
             },
             Variant::{VT_CLSID, VT_LPWSTR},
         },
@@ -72,15 +72,21 @@ fn create_start_menu_shortcut(executable: &Path) -> Result<PathBuf, AppError> {
     // SAFETY: COM is initialized on this thread and ShellLink is an in-process COM class.
     let link: IShellLinkW = unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }
         .map_err(platform_error)?;
+    let persist: IPersistFile = link.cast().map_err(platform_error)?;
+    let shortcut_wide = wide(&shortcut_path.display().to_string());
+    let preserve_target = shortcut_path.exists()
+        && unsafe { persist.Load(PCWSTR(shortcut_wide.as_ptr()), STGM_READWRITE) }.is_ok();
     let executable_wide = wide(&executable.display().to_string());
     let working_directory = executable.parent().unwrap_or_else(|| Path::new(""));
     let working_directory_wide = wide(&working_directory.display().to_string());
     let description = wide("PixelDone for Windows");
     unsafe {
-        link.SetPath(PCWSTR(executable_wide.as_ptr()))
-            .map_err(platform_error)?;
-        link.SetWorkingDirectory(PCWSTR(working_directory_wide.as_ptr()))
-            .map_err(platform_error)?;
+        if !preserve_target {
+            link.SetPath(PCWSTR(executable_wide.as_ptr()))
+                .map_err(platform_error)?;
+            link.SetWorkingDirectory(PCWSTR(working_directory_wide.as_ptr()))
+                .map_err(platform_error)?;
+        }
         link.SetDescription(PCWSTR(description.as_ptr()))
             .map_err(platform_error)?;
         link.SetIconLocation(PCWSTR(executable_wide.as_ptr()), 0)
@@ -96,8 +102,6 @@ fn create_start_menu_shortcut(executable: &Path) -> Result<PathBuf, AppError> {
     )?;
     unsafe { store.Commit() }.map_err(platform_error)?;
 
-    let persist: IPersistFile = link.cast().map_err(platform_error)?;
-    let shortcut_wide = wide(&shortcut_path.display().to_string());
     unsafe { persist.Save(PCWSTR(shortcut_wide.as_ptr()), true) }.map_err(platform_error)?;
     Ok(shortcut_path)
 }

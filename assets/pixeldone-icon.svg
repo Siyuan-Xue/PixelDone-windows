@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 108 108">
-  <rect width="108" height="108" fill="#262624"/>
-  <g transform="translate(54 54) scale(1.07) translate(-54 -54)" shape-rendering="crispEdges">
+  <g transform="translate(54 54) scale(1.42) translate(-54 -54)" shape-rendering="crispEdges">
     <path fill="#4B463E" d="M34 28h40v52H34z"/>
     <path fill="#FAF9F5" d="M37 31h34v46H37z"/>
     <path fill="#D97757" d="M44 24h20v10H44z"/>

@@ -22,6 +22,9 @@ pub const TRASH_CHECKLIST_ID: &str = "trash";
 pub const TRASH_CHECKLIST_NAME: &str = "TRASH";
 pub const SETTINGS_CHECKLIST_ID: &str = "settings";
 pub const SETTINGS_CHECKLIST_NAME: &str = "SETTINGS";
+pub const DEFAULT_SIDEBAR_WIDTH_PX: i64 = 256;
+pub const MIN_SIDEBAR_WIDTH_PX: i64 = 220;
+pub const MAX_SIDEBAR_WIDTH_PX: i64 = 420;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +37,7 @@ pub struct AppSettings {
     pub autostart_enabled: bool,
     pub automatic_update_check_enabled: bool,
     pub enhanced_xhigh_alarm_enabled: bool,
+    pub sidebar_width_px: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,7 +68,18 @@ impl Default for AppSettings {
             autostart_enabled: true,
             automatic_update_check_enabled: true,
             enhanced_xhigh_alarm_enabled: false,
+            sidebar_width_px: DEFAULT_SIDEBAR_WIDTH_PX,
         }
+    }
+}
+
+impl AppSettings {
+    pub fn normalized(mut self) -> Self {
+        self.dock = self.dock.normalized();
+        self.sidebar_width_px = self
+            .sidebar_width_px
+            .clamp(MIN_SIDEBAR_WIDTH_PX, MAX_SIDEBAR_WIDTH_PX);
+        self
     }
 }
 
@@ -194,6 +209,7 @@ impl AppSnapshot {
                 .map(|list| list.id.clone())
                 .unwrap_or_else(|| DEFAULT_CHECKLIST_ID.to_owned());
         }
+        self.settings = self.settings.normalized();
         self
     }
 }
@@ -300,6 +316,26 @@ mod tests {
                 .checklists
                 .iter()
                 .any(|list| list.kind == ChecklistKind::Settings)
+        );
+    }
+
+    #[test]
+    fn local_sidebar_width_is_clamped_to_the_supported_range() {
+        let below_minimum = AppSettings {
+            sidebar_width_px: 10,
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            below_minimum.normalized().sidebar_width_px,
+            MIN_SIDEBAR_WIDTH_PX
+        );
+        let above_maximum = AppSettings {
+            sidebar_width_px: 999,
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            above_maximum.normalized().sidebar_width_px,
+            MAX_SIDEBAR_WIDTH_PX
         );
     }
 }

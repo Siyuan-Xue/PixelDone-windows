@@ -13,30 +13,49 @@ use crate::{domain::AppError, infrastructure::reminder::ReminderOccurrence};
 pub const APP_USER_MODEL_ID: &str = "com.milesxue.pixeldone.windows";
 const REMINDER_GROUP: &str = "pixeldone-reminders";
 const WINDOWS_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
+const ERROR_NOT_FOUND_HRESULT: i32 = 0x8007_0490_u32 as i32;
 
 pub fn replace_scheduled_toasts(occurrences: &[ReminderOccurrence]) -> Result<usize, AppError> {
     let notifier = notification_notifier()?;
     let existing = notifier
         .GetScheduledToastNotifications()
-        .map_err(platform_error)?;
-    let size = existing.Size().map_err(platform_error)?;
+        .map_err(|error| platform_error("read scheduled notifications", error))?;
+    let size = existing
+        .Size()
+        .map_err(|error| platform_error("read scheduled notification count", error))?;
+    let mut reminders = Vec::new();
     for index in 0..size {
-        let scheduled = existing.GetAt(index).map_err(platform_error)?;
+        let scheduled = match existing.GetAt(index) {
+            Ok(scheduled) => scheduled,
+            Err(error) if is_element_not_found(&error) => continue,
+            Err(error) => {
+                return Err(platform_error(
+                    "read scheduled notification snapshot",
+                    error,
+                ));
+            }
+        };
         if scheduled
             .Group()
             .map(|group| group == REMINDER_GROUP)
             .unwrap_or(false)
         {
-            notifier
-                .RemoveFromSchedule(&scheduled)
-                .map_err(platform_error)?;
+            reminders.push(scheduled);
+        }
+    }
+    for scheduled in reminders {
+        if let Err(error) = notifier.RemoveFromSchedule(&scheduled)
+            && !is_element_not_found(&error)
+        {
+            return Err(platform_error("remove scheduled notification", error));
         }
     }
 
     for occurrence in occurrences {
-        let xml = XmlDocument::new().map_err(platform_error)?;
+        let xml = XmlDocument::new()
+            .map_err(|error| platform_error("create scheduled notification XML", error))?;
         xml.LoadXml(&HSTRING::from(scheduled_toast_xml(occurrence)))
-            .map_err(platform_error)?;
+            .map_err(|error| platform_error("load scheduled notification XML", error))?;
         let delivery = DateTime {
             UniversalTime: occurrence
                 .delivery_at_millis
@@ -44,14 +63,16 @@ pub fn replace_scheduled_toasts(occurrences: &[ReminderOccurrence]) -> Result<us
                 .saturating_add(WINDOWS_EPOCH_TICKS),
         };
         let toast = ScheduledToastNotification::CreateScheduledToastNotification(&xml, delivery)
-            .map_err(platform_error)?;
+            .map_err(|error| platform_error("create scheduled notification", error))?;
         toast
             .SetTag(&HSTRING::from(schedule_tag(occurrence)))
-            .map_err(platform_error)?;
+            .map_err(|error| platform_error("set scheduled notification tag", error))?;
         toast
             .SetGroup(&HSTRING::from(REMINDER_GROUP))
-            .map_err(platform_error)?;
-        notifier.AddToSchedule(&toast).map_err(platform_error)?;
+            .map_err(|error| platform_error("set scheduled notification group", error))?;
+        notifier
+            .AddToSchedule(&toast)
+            .map_err(|error| platform_error("add scheduled notification", error))?;
     }
     Ok(occurrences.len())
 }
@@ -59,12 +80,21 @@ pub fn replace_scheduled_toasts(occurrences: &[ReminderOccurrence]) -> Result<us
 fn notification_notifier() -> Result<ToastNotifier, AppError> {
     let notifier =
         ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(APP_USER_MODEL_ID))
-            .map_err(platform_error)?;
-    let setting = notifier.Setting().map_err(platform_error)?;
-    if setting != NotificationSetting::Enabled {
-        return Err(AppError::NotificationsDisabled(notification_setting_name(
-            setting,
-        )));
+            .map_err(|error| platform_error("open PixelDone notification identity", error))?;
+    match notifier.Setting() {
+        Ok(setting) if setting != NotificationSetting::Enabled => {
+            return Err(AppError::NotificationsDisabled(notification_setting_name(
+                setting,
+            )));
+        }
+        Ok(_) => {}
+        // Some unpackaged desktop identities do not expose a Settings entry
+        // until Windows has accepted their first toast. Queue operations remain
+        // authoritative and surface a real failure if the identity is invalid.
+        Err(error) if is_element_not_found(&error) => {}
+        Err(error) => {
+            return Err(platform_error("read Windows notification setting", error));
+        }
     }
     Ok(notifier)
 }
@@ -126,8 +156,16 @@ fn escape_xml(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-fn platform_error(error: windows::core::Error) -> AppError {
-    AppError::Platform(error.to_string())
+fn is_element_not_found(error: &windows::core::Error) -> bool {
+    error.code().0 == ERROR_NOT_FOUND_HRESULT
+}
+
+pub fn is_element_not_found_app_error(error: &AppError) -> bool {
+    matches!(error, AppError::Platform(message) if message.contains("0x80070490") || message.contains("Element not found"))
+}
+
+fn platform_error(context: &str, error: windows::core::Error) -> AppError {
+    AppError::Platform(format!("{context}: {error}"))
 }
 
 #[cfg(test)]
@@ -177,5 +215,16 @@ mod tests {
         assert!(xml.contains("Notification.Looping.Alarm2"));
         assert!(xml.contains("activationType=\"protocol\""));
         assert!(xml.contains("a%26b"));
+    }
+
+    #[test]
+    fn element_not_found_is_recognized_for_idempotent_queue_operations() {
+        let error = AppError::Platform(
+            "remove scheduled notification: Element not found. (0x80070490)".to_owned(),
+        );
+        assert!(is_element_not_found_app_error(&error));
+        assert!(!is_element_not_found_app_error(&AppError::Platform(
+            "Access denied. (0x80070005)".to_owned()
+        )));
     }
 }

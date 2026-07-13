@@ -44,7 +44,75 @@ async function setCssViewport(width: number, height: number): Promise<{ innerWid
   return viewport;
 }
 
-describe('PixelDone 3.1.2 desktop layout', () => {
+describe('PixelDone 3.1.3 desktop layout', () => {
+  it('uses one 64 px header rhythm and keeps product identity in the window title', async () => {
+    const metrics = await browser.execute(() => {
+      const sidebar = document.querySelector<HTMLElement>('.sidebar-header');
+      const workspace = document.querySelector<HTMLElement>('.workspace-status');
+      const addList = document.querySelector<HTMLElement>('.new-list-button');
+      return {
+        title: document.title,
+        sidebarHeight: sidebar?.getBoundingClientRect().height ?? 0,
+        workspaceHeight: workspace?.getBoundingClientRect().height ?? 0,
+        eyebrowCount: document.querySelectorAll('.workspace-status .eyebrow, .sidebar .eyebrow').length,
+        makerCount: document.querySelectorAll('.maker-line').length,
+        syncChipCount: document.querySelectorAll('.workspace-status .sync-chip').length,
+        addListBorder: addList ? getComputedStyle(addList).borderStyle : '',
+        addListColor: addList ? getComputedStyle(addList).color : ''
+      };
+    });
+
+    expect(metrics.title).toBe('PixelDone — CODEX & XUE');
+    expect(metrics.sidebarHeight).toBe(64);
+    expect(metrics.workspaceHeight).toBe(64);
+    expect(metrics.eyebrowCount).toBe(0);
+    expect(metrics.makerCount).toBe(0);
+    expect(metrics.syncChipCount).toBe(0);
+    expect(metrics.addListBorder).toBe('none');
+    expect(metrics.addListColor).toBe('rgb(217, 119, 87)');
+  });
+
+  it('persists and clamps the keyboard-accessible sidebar width in LTR and RTL', async () => {
+    const initial = await bootstrap();
+    const originalSettings = initial.settings;
+
+    try {
+      await invoke('update_settings', {
+        expectedRevision: initial.revision,
+        settings: { ...initial.settings, languageMode: 'ENGLISH', sidebarWidthPx: 256 }
+      });
+      await browser.refresh();
+      await $('.sidebar-resizer').click();
+      await browser.keys(['ArrowRight']);
+      await browser.waitUntil(async () => (await bootstrap()).settings.sidebarWidthPx === 264);
+      await browser.refresh();
+      expect(Math.round(await $('.sidebar').getSize('width'))).toBe(264);
+
+      let snapshot = await bootstrap();
+      await invoke('update_settings', {
+        expectedRevision: snapshot.revision,
+        settings: { ...snapshot.settings, sidebarWidthPx: 999 }
+      });
+      await browser.refresh();
+      expect((await bootstrap()).settings.sidebarWidthPx).toBe(420);
+      expect(Math.round(await $('.sidebar').getSize('width'))).toBe(420);
+
+      snapshot = await bootstrap();
+      await invoke('update_settings', {
+        expectedRevision: snapshot.revision,
+        settings: { ...snapshot.settings, languageMode: 'ARABIC', sidebarWidthPx: 256 }
+      });
+      await browser.refresh();
+      await $('.sidebar-resizer').click();
+      await browser.keys(['ArrowRight']);
+      await browser.waitUntil(async () => (await bootstrap()).settings.sidebarWidthPx === 248);
+    } finally {
+      const snapshot = await bootstrap();
+      await invoke('update_settings', { expectedRevision: snapshot.revision, settings: originalSettings });
+      await browser.refresh();
+    }
+  });
+
   it('keeps checklist creation in the sidebar and task creation in the Dock', async () => {
     const initial = await bootstrap();
     const originalChecklistId = initial.selectedChecklistId;
@@ -110,7 +178,7 @@ describe('PixelDone 3.1.2 desktop layout', () => {
             ),
             sizes: buttons.map((button) => {
               const rect = button.getBoundingClientRect();
-              return { width: rect.width, height: rect.height };
+              return { width: rect.width, height: rect.height, bottom: rect.bottom };
             })
           };
         });
@@ -122,6 +190,7 @@ describe('PixelDone 3.1.2 desktop layout', () => {
         expect(metrics.gap).toBeGreaterThanOrEqual(4);
         expect(metrics.sequence).toEqual(expectedDockSequence(placement));
         expect(metrics.sizes.every(({ width, height }) => Math.abs(width - height) <= 1)).toBe(true);
+        expect(new Set(metrics.sizes.map(({ bottom }) => Math.round(bottom))).size).toBe(1);
       }
     } finally {
       let snapshot = await bootstrap();

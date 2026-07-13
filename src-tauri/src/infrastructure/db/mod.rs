@@ -260,7 +260,7 @@ impl SqliteRepository {
 
     async fn load_settings(&self) -> Result<AppSettings, AppError> {
         let Some(row) = sqlx::query(
-            "SELECT dark_theme, dock_plus_placement, dock_actions_json, never_show_update_dialog, future_sync_enabled, language_mode, autostart_enabled, automatic_update_check_enabled, enhanced_xhigh_alarm_enabled FROM local_settings WHERE id = 'settings'",
+            "SELECT dark_theme, dock_plus_placement, dock_actions_json, never_show_update_dialog, future_sync_enabled, language_mode, autostart_enabled, automatic_update_check_enabled, enhanced_xhigh_alarm_enabled, sidebar_width_px FROM local_settings WHERE id = 'settings'",
         )
         .fetch_optional(&self.pool)
         .await?
@@ -288,7 +288,9 @@ impl SqliteRepository {
                 != 0,
             enhanced_xhigh_alarm_enabled: row.try_get::<i64, _>("enhanced_xhigh_alarm_enabled")?
                 != 0,
-        })
+            sidebar_width_px: row.try_get("sidebar_width_px")?,
+        }
+        .normalized())
     }
 
     async fn load_update_timing(&self) -> Result<(Option<i64>, Option<i64>), AppError> {
@@ -383,7 +385,7 @@ impl SqliteRepository {
         let dock_actions = serde_json::to_string(&snapshot.settings.dock.actions)
             .map_err(|error| AppError::Database(error.to_string()))?;
         sqlx::query(
-            "INSERT INTO local_settings (id, dark_theme, dock_plus_placement, dock_actions_json, never_show_update_dialog, future_sync_enabled, language_mode, autostart_enabled, automatic_update_check_enabled, enhanced_xhigh_alarm_enabled) VALUES ('settings', ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET dark_theme = excluded.dark_theme, dock_plus_placement = excluded.dock_plus_placement, dock_actions_json = excluded.dock_actions_json, never_show_update_dialog = excluded.never_show_update_dialog, future_sync_enabled = excluded.future_sync_enabled, language_mode = excluded.language_mode, autostart_enabled = excluded.autostart_enabled, automatic_update_check_enabled = excluded.automatic_update_check_enabled, enhanced_xhigh_alarm_enabled = excluded.enhanced_xhigh_alarm_enabled",
+            "INSERT INTO local_settings (id, dark_theme, dock_plus_placement, dock_actions_json, never_show_update_dialog, future_sync_enabled, language_mode, autostart_enabled, automatic_update_check_enabled, enhanced_xhigh_alarm_enabled, sidebar_width_px) VALUES ('settings', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET dark_theme = excluded.dark_theme, dock_plus_placement = excluded.dock_plus_placement, dock_actions_json = excluded.dock_actions_json, never_show_update_dialog = excluded.never_show_update_dialog, future_sync_enabled = excluded.future_sync_enabled, language_mode = excluded.language_mode, autostart_enabled = excluded.autostart_enabled, automatic_update_check_enabled = excluded.automatic_update_check_enabled, enhanced_xhigh_alarm_enabled = excluded.enhanced_xhigh_alarm_enabled, sidebar_width_px = excluded.sidebar_width_px",
         )
         .bind(i64::from(snapshot.settings.dark_theme))
         .bind(placement_name(snapshot.settings.dock.plus_placement))
@@ -398,6 +400,7 @@ impl SqliteRepository {
         .bind(i64::from(
             snapshot.settings.enhanced_xhigh_alarm_enabled,
         ))
+        .bind(snapshot.settings.sidebar_width_px)
         .execute(&mut *transaction)
         .await?;
 

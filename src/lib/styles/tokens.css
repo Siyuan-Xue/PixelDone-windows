@@ -21,7 +21,7 @@
   --high: #fbbc05;
   --xhigh: #ea4335;
   --focus: #6a9bcc;
-  --sidebar-width: clamp(224px, 22vw, 256px);
+  --sidebar-width: 256px;
   --workspace-status-height: 64px;
   --radius: 0px;
   --font-ui: 'Cascadia Mono', Consolas, 'Microsoft YaHei UI', monospace;

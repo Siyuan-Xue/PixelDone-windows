@@ -37,6 +37,7 @@ const english = {
   cancelChecklist: 'Cancel checklist editing',
   todoCount: 'tasks',
   syncDetail: 'SYNC',
+  signInToSyncAndroid: 'Sign in to sync with Android.',
   addChecklist: 'Add checklist'
 } as const;
 
@@ -54,7 +55,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     storagePrivacy: '存储与隐私', application: '应用程序', localData: '本地数据', openFolder: '打开目录', legacyDataFound: '发现旧版数据',
     legacyDeleteConfirm: '删除旧版 Roaming 数据库？当前 Local 数据库不会受到影响。', updateReady: '发现可用更新',
     notificationIssue: '通知需要处理', alarmRinging: 'XHIGH 闹钟响铃中', openSettings: '打开设置', editChecklist: '编辑清单',
-    saveChecklist: '保存清单', cancelChecklist: '取消编辑清单', todoCount: '项待办', syncDetail: '同步', addChecklist: '添加清单'
+    saveChecklist: '保存清单', cancelChecklist: '取消编辑清单', todoCount: '项待办', syncDetail: '同步',
+    signInToSyncAndroid: '登录后可与 Android 同步。', addChecklist: '添加清单'
   },
   ar: {
     productKind: 'أداة بكسل', maker: 'CODEX & XUE', checklists: 'قوائم المهام', active: 'نشطة', done: 'مكتملة',
@@ -66,7 +68,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     storagePrivacy: 'التخزين والخصوصية', application: 'التطبيق', localData: 'البيانات المحلية', openFolder: 'فتح المجلد', legacyDataFound: 'عُثر على بيانات قديمة',
     legacyDeleteConfirm: 'حذف قاعدة بيانات Roaming القديمة؟ لن تتأثر قاعدة بيانات Local النشطة.', updateReady: 'يتوفر تحديث',
     notificationIssue: 'تحتاج الإشعارات إلى الانتباه', alarmRinging: 'منبّه XHIGH يرن', openSettings: 'فتح الإعدادات', editChecklist: 'تحرير القائمة',
-    saveChecklist: 'حفظ القائمة', cancelChecklist: 'إلغاء تحرير القائمة', todoCount: 'مهام', syncDetail: 'المزامنة', addChecklist: 'إضافة قائمة'
+    saveChecklist: 'حفظ القائمة', cancelChecklist: 'إلغاء تحرير القائمة', todoCount: 'مهام', syncDetail: 'المزامنة',
+    signInToSyncAndroid: 'سجّل الدخول للمزامنة مع Android.', addChecklist: 'إضافة قائمة'
   },
   fr: {
     productKind: 'OUTIL PIXEL', maker: 'CODEX & XUE', checklists: 'LISTES', active: 'ACTIVES', done: 'TERMINÉES',
@@ -78,7 +81,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     storagePrivacy: 'Stockage et confidentialité', application: 'Application', localData: 'Données locales', openFolder: 'Ouvrir le dossier', legacyDataFound: 'Anciennes données trouvées',
     legacyDeleteConfirm: 'Supprimer l’ancienne base Roaming ? La base Local active ne sera pas affectée.', updateReady: 'MISE À JOUR DISPONIBLE',
     notificationIssue: 'NOTIFICATION À VÉRIFIER', alarmRinging: 'ALARME XHIGH EN COURS', openSettings: 'Ouvrir les réglages', editChecklist: 'Modifier la liste',
-    saveChecklist: 'Enregistrer la liste', cancelChecklist: 'Annuler la modification', todoCount: 'tâches', syncDetail: 'SYNCHRO', addChecklist: 'Ajouter une liste'
+    saveChecklist: 'Enregistrer la liste', cancelChecklist: 'Annuler la modification', todoCount: 'tâches', syncDetail: 'SYNCHRO',
+    signInToSyncAndroid: 'Connectez-vous pour synchroniser avec Android.', addChecklist: 'Ajouter une liste'
   },
   ru: {
     productKind: 'ПИКСЕЛЬНЫЙ ИНСТРУМЕНТ', maker: 'CODEX & XUE', checklists: 'СПИСКИ', active: 'АКТИВНЫЕ', done: 'ГОТОВО',
@@ -90,7 +94,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     storagePrivacy: 'Хранилище и конфиденциальность', application: 'Приложение', localData: 'Локальные данные', openFolder: 'Открыть папку', legacyDataFound: 'Найдены старые данные',
     legacyDeleteConfirm: 'Удалить старую базу Roaming? Активная база Local не изменится.', updateReady: 'ДОСТУПНО ОБНОВЛЕНИЕ',
     notificationIssue: 'ТРЕБУЕТСЯ НАСТРОЙКА УВЕДОМЛЕНИЙ', alarmRinging: 'ЗВОНИТ БУДИЛЬНИК XHIGH', openSettings: 'Открыть настройки', editChecklist: 'Изменить список',
-    saveChecklist: 'Сохранить список', cancelChecklist: 'Отменить изменение', todoCount: 'задач', syncDetail: 'СИНХР.', addChecklist: 'Добавить список'
+    saveChecklist: 'Сохранить список', cancelChecklist: 'Отменить изменение', todoCount: 'задач', syncDetail: 'СИНХР.',
+    signInToSyncAndroid: 'Войдите, чтобы синхронизироваться с Android.', addChecklist: 'Добавить список'
   },
   es: {
     productKind: 'UTILIDAD PÍXEL', maker: 'CODEX & XUE', checklists: 'LISTAS', active: 'ACTIVAS', done: 'HECHAS',
@@ -102,7 +107,8 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     storagePrivacy: 'Almacenamiento y privacidad', application: 'Aplicación', localData: 'Datos locales', openFolder: 'Abrir carpeta', legacyDataFound: 'Se encontraron datos antiguos',
     legacyDeleteConfirm: '¿Eliminar la base Roaming antigua? La base Local activa no se verá afectada.', updateReady: 'ACTUALIZACIÓN DISPONIBLE',
     notificationIssue: 'NOTIFICACIÓN REQUIERE ATENCIÓN', alarmRinging: 'ALARMA XHIGH SONANDO', openSettings: 'Abrir ajustes', editChecklist: 'Editar lista',
-    saveChecklist: 'Guardar lista', cancelChecklist: 'Cancelar edición', todoCount: 'tareas', syncDetail: 'SINCRONIZAR', addChecklist: 'Añadir lista'
+    saveChecklist: 'Guardar lista', cancelChecklist: 'Cancelar edición', todoCount: 'tareas', syncDetail: 'SINCRONIZAR',
+    signInToSyncAndroid: 'Inicia sesión para sincronizar con Android.', addChecklist: 'Añadir lista'
   }
 };
 

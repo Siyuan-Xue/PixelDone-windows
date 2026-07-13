@@ -58,6 +58,8 @@
   let dragStart = $state({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
   let storageInfo = $state<StorageInfo | null>(null);
   let updateProgress = $state<{ downloadedBytes: number; totalBytes: number | null } | null>(null);
+  let sidebarWidth = $state(256);
+  let resizingSidebar = $state(false);
 
   let selectedList = $derived(
     snapshot?.checklists.find((list) => list.id === snapshot?.selectedChecklistId) ?? null
@@ -148,6 +150,11 @@
     return key ? t(key) : snapshot.sync.state;
   }
 
+  function syncDetailMessage(): string {
+    if (snapshot.sync.state === 'SIGNED_OUT') return wt('signInToSyncAndroid');
+    return snapshot.sync.message ?? syncStateLabel();
+  }
+
   function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -163,9 +170,85 @@
 
   function applyPresentationSettings(): void {
     if (!snapshot) return;
+    if (!resizingSidebar) sidebarWidth = clampSidebarWidth(snapshot.settings.sidebarWidthPx);
     document.documentElement.dataset.theme = snapshot.settings.darkTheme ? 'dark' : 'light';
     document.documentElement.lang = localeFor(snapshot.settings.languageMode);
     document.documentElement.dir = localeFor(snapshot.settings.languageMode) === 'ar' ? 'rtl' : 'ltr';
+  }
+
+  function clampSidebarWidth(value: number): number {
+    return Math.min(420, Math.max(220, Math.round(value)));
+  }
+
+  function sidebarWidthFromPointer(clientX: number): number {
+    return clampSidebarWidth(rtl ? window.innerWidth - clientX : clientX);
+  }
+
+  function beginSidebarResize(event: PointerEvent): void {
+    resizingSidebar = true;
+    sidebarWidth = sidebarWidthFromPointer(event.clientX);
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function moveSidebarResize(event: PointerEvent): void {
+    if (resizingSidebar) sidebarWidth = sidebarWidthFromPointer(event.clientX);
+  }
+
+  async function finishSidebarResize(event: PointerEvent): Promise<void> {
+    if (!resizingSidebar) return;
+    resizingSidebar = false;
+    const target = event.currentTarget as HTMLElement;
+    if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+    await persistSidebarWidth(sidebarWidth);
+  }
+
+  async function persistSidebarWidth(width: number): Promise<void> {
+    const next = clampSidebarWidth(width);
+    sidebarWidth = next;
+    if (snapshot.settings.sidebarWidthPx !== next) {
+      await updateSettings({ ...snapshot.settings, sidebarWidthPx: next });
+    }
+  }
+
+  async function resizeSidebarWithKeyboard(event: KeyboardEvent): Promise<void> {
+    let next = sidebarWidth;
+    if (event.key === 'Home') next = 256;
+    else if (event.key === 'ArrowRight') next += rtl ? -8 : 8;
+    else if (event.key === 'ArrowLeft') next += rtl ? 8 : -8;
+    else return;
+    event.preventDefault();
+    await persistSidebarWidth(next);
+  }
+
+  function sidebarResize(node: HTMLElement): { destroy: () => void } {
+    node.tabIndex = 0;
+    const pointerDown = (event: PointerEvent) => beginSidebarResize(event);
+    const pointerMove = (event: PointerEvent) => moveSidebarResize(event);
+    const pointerUp = (event: PointerEvent) => void finishSidebarResize(event);
+    const keyDown = (event: KeyboardEvent) => void resizeSidebarWithKeyboard(event);
+    const doubleClick = () => void persistSidebarWidth(256);
+    node.addEventListener('pointerdown', pointerDown);
+    node.addEventListener('pointermove', pointerMove);
+    node.addEventListener('pointerup', pointerUp);
+    node.addEventListener('pointercancel', pointerUp);
+    node.addEventListener('keydown', keyDown);
+    node.addEventListener('dblclick', doubleClick);
+    return {
+      destroy: () => {
+        node.removeEventListener('pointerdown', pointerDown);
+        node.removeEventListener('pointermove', pointerMove);
+        node.removeEventListener('pointerup', pointerUp);
+        node.removeEventListener('pointercancel', pointerUp);
+        node.removeEventListener('keydown', keyDown);
+        node.removeEventListener('dblclick', doubleClick);
+      }
+    };
+  }
+
+  function reminderNeedsAttention(): boolean {
+    return snapshot.reminder.scheduleTruncated
+      || ['ERROR', 'IDENTITY_ERROR', 'DISABLED_BY_SYSTEM'].includes(snapshot.reminder.state);
   }
 
   function compareTodo(left: TodoItem, right: TodoItem, mode: SortMode): number {
@@ -477,22 +560,19 @@
 </script>
 
 <svelte:window onkeydown={handleKeys} />
-<svelte:head><title>PixelDone</title></svelte:head>
+<svelte:head><title>PixelDone — CODEX &amp; XUE</title></svelte:head>
 
 {#if loading}
   <main class="launch-state"><span class="launch-mark">PD</span><p>{t('ready')}…</p></main>
 {:else if snapshot && selectedList}
-  <main class:dark={snapshot.settings.darkTheme} class:rtl class="app-shell">
+  <main class:dark={snapshot.settings.darkTheme} class:rtl class:resizing={resizingSidebar} class="app-shell" style={`--sidebar-width: ${sidebarWidth}px`}>
     <aside class="sidebar" aria-label={t('app')}>
-      <div class="brand-row">
-        <div class="brand-copy"><span class="eyebrow">{wt('productKind')}</span><h1>PixelDone</h1></div>
+      <div class="sidebar-header">
+        <span class="section-label">{wt('checklists')}</span>
+        <button class="new-list-button" title={`${t('new_list')} · Ctrl+Shift+N`} aria-label={t('new_list')} aria-expanded={creatingList} onclick={() => { creatingList = !creatingList; requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#new-list-name')?.focus()); }}><Icon name="plus" /></button>
       </div>
 
       <nav class="list-nav" aria-label={t('app')}>
-        <div class="list-nav-header sidebar-section-head">
-          <span class="section-label">{wt('checklists')}</span>
-          <button class="new-list-button" title={`${t('new_list')} · Ctrl+Shift+N`} aria-label={t('new_list')} aria-expanded={creatingList} onclick={() => { creatingList = !creatingList; requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#new-list-name')?.focus()); }}><Icon name="plus" /></button>
-        </div>
         {#if creatingList}
           <form class="inline-create" onsubmit={submitNewList}><input id="new-list-name" aria-label={t('new_list')} placeholder={t('list_name')} bind:value={newListName} /><button type="submit">{t('add')}</button></form>
         {/if}
@@ -525,15 +605,26 @@
       </nav>
 
       <footer class="sidebar-footer">
-        <div class="cloud-state"><Icon name="cloud" /><span><strong>{syncStateLabel()}</strong>{snapshot.auth.userEmail ?? t('signed_out')}</span></div>
-        <div class="maker-line"><span>PIXELDONE</span><span>{wt('maker')}</span></div>
+        <div class="cloud-state">
+          <button class="sidebar-account-button" aria-label={t('account')} onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}><Icon name="cloud" /><span><strong>{syncStateLabel()}</strong>{snapshot.auth.userEmail ?? t('signed_out')}</span></button>
+          {#if snapshot.auth.signedIn}<button class="sidebar-signout" title={t('sign_out')} aria-label={t('sign_out')} onclick={() => void commit(api.signOut(snapshot.revision))}><Icon name="logout" size={20} /></button>{/if}
+        </div>
       </footer>
+      <div
+        use:sidebarResize
+        class="sidebar-resizer"
+        role="separator"
+        aria-label={wt('checklists')}
+        aria-orientation="vertical"
+        aria-valuemin="220"
+        aria-valuemax="420"
+        aria-valuenow={sidebarWidth}
+      ></div>
     </aside>
 
     <section class="workspace">
       <header class="workspace-header workspace-status">
         <div class="title-stack status-title">
-          <span class="eyebrow">{selectedList.kind === 'NORMAL' ? wt('checklists') : wt('system')}</span>
           <div class="title-line">
             {#if snapshot.checklistHistory.length}<button class="icon-button" title="Alt+Left" onclick={() => void commit(api.backChecklist(snapshot.revision))}><Icon name="back" /></button>{/if}
             <h2 dir="auto">{selectedList.name}</h2>
@@ -541,10 +632,9 @@
           </div>
         </div>
         <div class="header-actions status-actions status-signals">
-          <button class="status-chip status-signal sync-chip" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}><Icon name="cloud" /><span>{syncStateLabel()}</span>{#if snapshot.sync.pendingCount}<strong>{snapshot.sync.pendingCount}</strong>{/if}</button>
           {#if snapshot.sync.conflictCount}<button class="status-chip status-signal conflict" onclick={() => void openConflicts()}>{t('conflicts')} {snapshot.sync.conflictCount}</button>{/if}
           {#if snapshot.update.state === 'AVAILABLE'}<button class="status-chip status-signal update-chip" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('updateReady')}</button>{/if}
-          {#if snapshot.reminder.message || snapshot.reminder.scheduleTruncated}<button class="status-chip status-signal error" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('notificationIssue')}</button>{/if}
+          {#if reminderNeedsAttention()}<button class="status-chip status-signal error" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('notificationIssue')}</button>{/if}
         </div>
       </header>
 
@@ -644,7 +734,7 @@
                 <div class="auth-buttons"><button class="primary-button" disabled={authBusy}>{authMode === 'sign-in' ? t('sign_in') : t('sign_up')}</button><button type="button" class="quiet-button" onclick={() => void commit(api.resetPassword(snapshot.revision, authEmail))}>{t('reset')}</button></div>
               </form>
             {/if}
-            <div class="setting-row"><div><strong>{t('sync')}</strong><p>{snapshot.sync.message ?? snapshot.sync.state}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.sync.conflictCount}<button class="primary-button" onclick={() => void openConflicts()}>{t('review')} {snapshot.sync.conflictCount}</button>{/if}</div></div>
+            <div class="setting-row"><div><strong>{t('sync')}</strong><p data-testid="sync-detail">{syncDetailMessage()}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.sync.conflictCount}<button class="primary-button" onclick={() => void openConflicts()}>{t('review')} {snapshot.sync.conflictCount}</button>{/if}</div></div>
           </section>
 
           <section>
@@ -652,7 +742,7 @@
             <div class="setting-row"><div><strong>{t('settings_language')}</strong><p>{languageOptions.find((item) => item.value === snapshot.settings.languageMode)?.label ?? t('language_system')}</p></div></div>
             <div class="language-grid">
               {#each languageOptions as language}
-                <button dir="auto" class:selected={snapshot.settings.languageMode === language.value} onclick={() => void setLanguage(language.value)}><span class="pixel-choice"></span>{language.label ?? t('language_system')}</button>
+                <button class:selected={snapshot.settings.languageMode === language.value} onclick={() => void setLanguage(language.value)}><span class="pixel-choice"></span><span class="language-label" dir="auto">{language.label ?? t('language_system')}</span></button>
               {/each}
               {#if languageOptions.length % 2}<span aria-hidden="true"></span>{/if}
             </div>

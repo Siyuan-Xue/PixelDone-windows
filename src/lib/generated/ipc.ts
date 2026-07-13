@@ -55,6 +55,7 @@ export interface AppSettings {
   autostartEnabled: boolean;
   automaticUpdateCheckEnabled: boolean;
   enhancedXhighAlarmEnabled: boolean;
+  sidebarWidthPx: number;
 }
 
 export interface StorageInfo {

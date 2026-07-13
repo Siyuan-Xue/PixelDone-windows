@@ -9,7 +9,10 @@ use crate::{
     infrastructure::reminder::{
         ReminderOccurrence, SCHEDULE_HORIZON_MILLIS, SCHEDULE_LIMIT, occurrences,
     },
-    platform::windows::notification::replace_scheduled_toasts,
+    platform::windows::{
+        identity::ensure_notification_identity,
+        notification::{is_element_not_found_app_error, replace_scheduled_toasts},
+    },
 };
 
 pub fn start_background_services(app: AppHandle) {
@@ -181,7 +184,14 @@ pub async fn reconcile_system_reminders(app: &AppHandle) {
         truncated |= scheduled.len() > SCHEDULE_LIMIT;
         scheduled.truncate(SCHEDULE_LIMIT);
     }
-    let result = replace_scheduled_toasts(&scheduled);
+    let mut result = replace_scheduled_toasts(&scheduled);
+    if result.as_ref().is_err_and(is_element_not_found_app_error)
+        && let Ok(executable) = std::env::current_exe()
+        && ensure_notification_identity(&executable).is_ok()
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        result = replace_scheduled_toasts(&scheduled);
+    }
     if result.is_ok() {
         let active_ids = snapshot
             .checklists
@@ -215,8 +225,14 @@ pub async fn reconcile_system_reminders(app: &AppHandle) {
     let before = runtime.snapshot.clone();
     match result {
         Ok(count) => {
-            runtime.snapshot.reminder.state =
-                if truncated { "DEGRADED" } else { "SCHEDULED" }.to_owned();
+            runtime.snapshot.reminder.state = if truncated {
+                "DEGRADED"
+            } else if count == 0 {
+                "IDLE"
+            } else {
+                "SCHEDULED"
+            }
+            .to_owned();
             runtime.snapshot.reminder.scheduled_count = count;
             runtime.snapshot.reminder.schedule_horizon_at_millis =
                 Some(now + SCHEDULE_HORIZON_MILLIS);

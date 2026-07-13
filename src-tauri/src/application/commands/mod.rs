@@ -489,10 +489,7 @@ pub async fn update_settings(
         result.map_err(|error| AppError::Platform(error.to_string()))?;
     }
     mutate(state, expected_revision, |snapshot| {
-        snapshot.settings = AppSettings {
-            dock: settings.dock.normalized(),
-            ..settings
-        };
+        snapshot.settings = settings.normalized();
         Ok(vec![SETTINGS_CHECKLIST_ID.to_owned()])
     })
     .await

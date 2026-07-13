@@ -12,7 +12,9 @@ fn migrations_persist_and_reload_the_initial_snapshot() {
             .expect("migrations should apply");
         let mut snapshot = AppSnapshot::initial(42);
         assert!(!snapshot.settings.enhanced_xhigh_alarm_enabled);
+        assert_eq!(snapshot.settings.sidebar_width_px, 256);
         snapshot.settings.enhanced_xhigh_alarm_enabled = true;
+        snapshot.settings.sidebar_width_px = 344;
         repository
             .save_snapshot(&snapshot)
             .await
