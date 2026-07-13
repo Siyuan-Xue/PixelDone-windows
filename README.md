@@ -1,12 +1,12 @@
 # PixelDone Windows
 
-PixelDone for Windows 3.2.0 候选源码。当前公开正式版为 3.1.3；3.2.0 同步升级 Android 与 Windows 的密码修改和私有图片同步协议，尚未推送、打 tag 或发布。
+PixelDone for Windows 3.2.0 正式版源码。3.2.0 同步升级 Android 与 Windows 的密码修改和私有图片同步协议。
 
 ## 版本基线
 
-- Android：当前正式版为 PixelDone 3.1.1；3.2.0 候选源码使用 Room v6。
-- Windows：当前正式版本为 PixelDone for Windows 3.1.3；安装身份、数据目录与 3.1.x 保持不变。
-- Android 与 Windows：当前候选源码统一为 3.2.0，必须等待 Supabase 3.2 迁移验收后才能发布。
+- Android：当前正式版为 PixelDone 3.2.0，使用 Room v6。
+- Windows：当前正式版本为 PixelDone for Windows 3.2.0；安装身份、数据目录与 3.1.x 保持不变。
+- Android 与 Windows：Supabase 3.2 两阶段迁移及单行总验收已于 2026-07-13 全部通过。
 - Windows：Rust 1.96.1 / Edition 2024、Tauri 2、Svelte 5.56.4、TypeScript 6.0.2、Bun 1.3.14。
 - 支持范围：Windows 11 24H2+，仅发布 x64 NSIS 安装包。
 - 本地数据：`%LOCALAPPDATA%\com.milesxue.pixeldone.windows\data\pixeldone.sqlite3`；图片按需缓存在本机 `attachments` 目录。
@@ -15,7 +15,7 @@ PixelDone for Windows 3.2.0 候选源码。当前公开正式版为 3.1.3；3.2.
 
 ## 安装与运行
 
-当前正式版使用 `PixelDone_3.1.3_x64-setup.exe` 完成当前用户安装。正式默认目录是 `%LOCALAPPDATA%\PixelDone`，主程序名为 `PixelDone.exe`。路径中的 `test` 仅可能来自历史验收时显式指定的临时目录，不是正式安装器配置。
+当前正式版使用 `PixelDone_3.2.0_x64-setup.exe` 完成当前用户安装。正式默认目录是 `%LOCALAPPDATA%\PixelDone`，主程序名为 `PixelDone.exe`。路径中的 `test` 仅可能来自历史验收时显式指定的临时目录，不是正式安装器配置。
 
 重复运行相同或更高版本的 EXE 会进入 NSIS 维护/升级流程并覆盖同一产品安装，不会创建多个 PixelDone。Beta 使用独立产品标识，允许与正式版并存。
 
@@ -23,7 +23,7 @@ PixelDone for Windows 3.2.0 候选源码。当前公开正式版为 3.1.3；3.2.
 
 ## 桌面界面
 
-3.2.0 沿用 3.1.3 已验收的桌面结构，并增加设置页密码修改以及跨端图片同步；候选包的最终构建与安装态验证记录见 3.2.0 parity evidence。
+3.2.0 沿用 3.1.3 已验收的桌面结构，并增加设置页密码修改以及跨端图片同步；构建验证和仍待完成的安装态检查记录见 3.2.0 parity evidence。
 
 - 左侧栏集中显示普通清单、回收站、设置、账号和同步摘要；独立方形按钮负责新建清单，不再使用长按任务“+”按钮的移动端手势。
 - 主工作区顶部显示当前清单、Active/Done 数量、同步状态以及按需出现的冲突、通知和更新异常。
@@ -94,4 +94,4 @@ $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw 'src-tauri/signing/pixeldone-u
 bun tauri build --bundles nsis --target x86_64-pc-windows-msvc
 ```
 
-3.2.0 正式 Release 必须通过 `parity/pixeldone-3.2.0.yaml` 的 100% required gate。发布前，运维人员必须先以 `supabase_storage_admin` 执行 `PixelDone/docs/pixeldone-supabase-3.2.0-storage-policies.sql`，再以 PixelDone 公共对象所有者执行 `PixelDone/docs/pixeldone-supabase-3.2.0-migration.sql`，回传验证结果并完成双设备原图同步验收；不得修改 Supabase 托管的 Storage 表所有权。当前工作只允许生成本地候选包，不允许提前推送或发布 3.2.0。
+Supabase 3.2 Storage 策略、公共 schema 迁移及总验收已通过，不得修改 Supabase 托管的 Storage 表所有权。运维方在知悉 parity 尚未达到 100% 后明确授权发布 3.2.0；双设备原图同步、密码全局退出、Realtime 与通知安装态回归仍保持未验证状态，不得表述为已通过。
