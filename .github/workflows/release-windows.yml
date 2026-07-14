@@ -18,7 +18,7 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bun run parity:check
-      - run: bun test
+      - run: bun run test
 
   release:
     needs: parity-gate
@@ -65,4 +65,4 @@ jobs:
           bun run release:manifest
           $directory = 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis'
           gh release edit $env:GITHUB_REF_NAME --notes-file RELEASE_NOTES.md
-          gh release upload $env:GITHUB_REF_NAME "$directory/PixelDone_3.2.2_x64-setup.exe.sha256" "$directory/latest.json" --clobber
+          gh release upload $env:GITHUB_REF_NAME "$directory/PixelDone_3.2.3_x64-setup.exe.sha256" "$directory/latest.json" --clobber

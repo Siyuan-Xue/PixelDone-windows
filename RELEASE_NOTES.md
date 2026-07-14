@@ -1,6 +1,6 @@
-# PixelDone for Windows 3.2.2
+# PixelDone for Windows 3.2.3
 
-PixelDone for Windows 3.2.2 is an emergency startup hotfix for 3.2.1.
+PixelDone for Windows 3.2.3 is an emergency startup hotfix for 3.2.1.
 
 ## Fix
 
@@ -11,7 +11,7 @@ PixelDone for Windows 3.2.2 is an emergency startup hotfix for 3.2.1.
 
 ## Installation and update
 
-- Run `PixelDone_3.2.2_x64-setup.exe` to overwrite 3.2.1 for the current Windows user. Do not delete the PixelDone data directory.
+- Run `PixelDone_3.2.3_x64-setup.exe` to overwrite 3.2.1 or the locally validated 3.2.2 candidate for the current Windows user. Do not delete the PixelDone data directory.
 - The installer intentionally has no Authenticode publisher signature, so Windows may display an unknown-publisher warning.
 - The detached Tauri updater signature and `latest.json` provide update-download integrity checking; they do not provide Windows publisher identity authentication.
 

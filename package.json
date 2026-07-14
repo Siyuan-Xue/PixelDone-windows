@@ -1,6 +1,6 @@
 {
   "name": "pixeldone-windows",
-  "version": "3.2.2",
+  "version": "3.2.3",
   "description": "Rust-first Windows client for PixelDone",
   "type": "module",
   "private": true,
@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "test": "bun test",
+    "test": "svelte-kit sync && bun test",
     "e2e:binary": "tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json",
     "e2e": "bun run e2e:binary && wdio run wdio.conf.ts",
     "parity:report": "bun scripts/generate-parity-report.ts",
