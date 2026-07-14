@@ -2,13 +2,26 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { open } from '@tauri-apps/plugin-dialog';
+  import AuthModal from '$lib/components/auth/AuthModal.svelte';
+  import {
+    authEmailForSubmission,
+    validateAuthInput,
+    type AuthMode,
+    type AuthValidationError
+  } from '$lib/components/auth/auth';
   import Icon from '$lib/components/common/Icon.svelte';
+  import ScriptAwareText from '$lib/components/common/ScriptAwareText.svelte';
   import TodoDock from '$lib/components/shell/TodoDock.svelte';
   import TodoEditorModal from '$lib/components/shell/TodoEditorModal.svelte';
   import { reconcileEditorMode, type TodoEditorMode } from '$lib/components/shell/editor';
   import { localeFor, type MessageKey } from '$lib/generated/i18n';
   import type { WindowsMessageKey } from '$lib/i18n/windows';
-  import { uiMessage, uiText, uiWindowsMessage } from '$lib/i18n/presentation';
+  import {
+    uiMessage,
+    uiText,
+    uiWindowsAuthValidationMessage,
+    uiWindowsMessage
+  } from '$lib/i18n/presentation';
   import type {
     AppLanguage,
     AppError,
@@ -49,8 +62,14 @@
   let highlightedTodoId = $state<string | null>(null);
   let authEmail = $state('');
   let authPassword = $state('');
-  let authMode = $state<'sign-in' | 'sign-up'>('sign-in');
+  let authMode = $state<AuthMode>('sign-in');
   let authBusy = $state(false);
+  let authModalOpen = $state(false);
+  let authError = $state('');
+  let authErrorKind = $state<AuthValidationError | null>(null);
+  let authTrigger = $state<HTMLElement | null>(null);
+  let authModalGeneration = 0;
+  let authSubmissionId = 0;
   let passwordEditorOpen = $state(false);
   let currentPassword = $state('');
   let newPassword = $state('');
@@ -135,12 +154,28 @@
     }
   });
 
+  $effect(() => {
+    if (snapshot?.auth.signedIn && authModalOpen) closeAuthModal();
+  });
+
   function t(key: MessageKey): string {
     return uiMessage(locale, key);
   }
 
   function wt(key: WindowsMessageKey): string {
     return uiWindowsMessage(locale, key);
+  }
+
+  function languageTagFor(language: AppLanguage): string {
+    if (language === 'SYSTEM') return locale;
+    return {
+      ENGLISH: 'en',
+      SIMPLIFIED_CHINESE: 'zh-Hans',
+      ARABIC: 'ar',
+      FRENCH: 'fr',
+      RUSSIAN: 'ru',
+      SPANISH: 'es'
+    }[language];
   }
 
   function syncStateLabel(): string {
@@ -432,14 +467,90 @@
     selectedTodoId = null;
   }
 
+  function openAuthModal(trigger: HTMLElement): void {
+    authTrigger = trigger;
+    authMode = 'sign-in';
+    authPassword = '';
+    authError = '';
+    authErrorKind = null;
+    authModalGeneration += 1;
+    authModalOpen = true;
+  }
+
+  function closeAuthModal(): void {
+    if (!authModalOpen) return;
+    const trigger = authTrigger;
+    authModalOpen = false;
+    authModalGeneration += 1;
+    authPassword = '';
+    authError = '';
+    authErrorKind = null;
+    authTrigger = null;
+    requestAnimationFrame(() => trigger?.focus());
+  }
+
+  function setAuthMode(mode: AuthMode): void {
+    authMode = mode;
+    authError = '';
+    authErrorKind = null;
+  }
+
+  function updateAuthEmail(value: string): void {
+    authEmail = value;
+    authError = '';
+    authErrorKind = null;
+  }
+
+  function updateAuthPassword(value: string): void {
+    authPassword = value;
+    authError = '';
+    authErrorKind = null;
+  }
+
+  function authValidationText(error: AuthValidationError): string {
+    if (error === 'required') return t('auth_email_password_required');
+    return uiWindowsAuthValidationMessage(
+      locale,
+      error === 'invalid-email' ? 'invalidEmail' : 'passwordTooShort'
+    );
+  }
+
   async function authAction(): Promise<void> {
-    if (!snapshot) return;
+    if (!snapshot || authBusy) return;
+    const validationError = validateAuthInput(authEmail, authPassword);
+    if (validationError) {
+      authErrorKind = validationError;
+      authError = authValidationText(validationError);
+      return;
+    }
+
+    const generation = authModalGeneration;
+    const submissionId = ++authSubmissionId;
+    const email = authEmailForSubmission(authEmail);
     authBusy = true;
-    const result = authMode === 'sign-in'
-      ? await commit(api.signIn(snapshot.revision, authEmail, authPassword))
-      : await commit(api.signUp(snapshot.revision, authEmail, authPassword));
-    if (result) authPassword = '';
-    authBusy = false;
+    authError = '';
+    authErrorKind = null;
+    try {
+      const result = authMode === 'sign-in'
+        ? await api.signIn(snapshot.revision, email, authPassword)
+        : await api.signUp(snapshot.revision, email, authPassword);
+      snapshot = applyMutation(snapshot, result);
+      applyPresentationSettings();
+      authEmail = email;
+      if (authModalOpen && generation === authModalGeneration) closeAuthModal();
+    } catch (error) {
+      const appError = error as Partial<AppError>;
+      if (appError.code === 'STALE_REVISION') {
+        snapshot = await api.bootstrap();
+        applyPresentationSettings();
+      }
+      if (authModalOpen && generation === authModalGeneration) {
+        authError = errorText(error);
+        authErrorKind = null;
+      }
+    } finally {
+      if (submissionId === authSubmissionId) authBusy = false;
+    }
   }
 
   async function changePassword(): Promise<void> {
@@ -661,7 +772,7 @@
   <main class:dark={snapshot.settings.darkTheme} class:rtl class:resizing={resizingSidebar} class="app-shell" style={`--sidebar-width: ${sidebarWidth}px`}>
     <aside class="sidebar" aria-label={t('app')}>
       <div class="sidebar-header">
-        <span class="section-label">{wt('checklists')}</span>
+        <span class="section-title">{wt('checklists')}</span>
         <button class="new-list-button" title={`${t('new_list')} · Ctrl+Shift+N`} aria-label={t('new_list')} aria-expanded={creatingList} onclick={() => { creatingList = !creatingList; requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#new-list-name')?.focus()); }}><Icon name="plus" /></button>
       </div>
 
@@ -679,7 +790,7 @@
             {:else}
               <button class="nav-main" onclick={() => void chooseChecklist(list.id)}>
                 <span class="nav-icon"><Icon name="list" /></span>
-                <span class="nav-name">{list.name}</span><span class="nav-count">{list.items.filter((item) => !item.completed).length}</span>
+                <span class="nav-name"><ScriptAwareText text={list.name} role="serif" /></span><span class="nav-count">{list.items.filter((item) => !item.completed).length}</span>
               </button>
             {/if}
             {#if editingListId !== list.id}<button class="row-more" title={t('edit_list')} aria-label={`${t('edit_list')}: ${list.name}`} onclick={() => beginRename(list)}><Icon name="edit" /></button>{/if}
@@ -691,7 +802,7 @@
       <nav class="special-nav" aria-label={t('app_options')}>
         {#each specialLists as list (list.id)}
           <button class:active={list.id === snapshot.selectedChecklistId} class="special-row" onclick={() => void chooseChecklist(list.id)}>
-            <span class="nav-icon"><Icon name={list.kind === 'TRASH' ? 'trash' : 'settings'} /></span><span>{checklistDisplayName(list)}</span>
+            <span class="nav-icon"><Icon name={list.kind === 'TRASH' ? 'trash' : 'settings'} /></span><span class="special-name"><ScriptAwareText text={checklistDisplayName(list)} role="serif" /></span>
             {#if list.kind === 'TRASH' && list.items.length}<span class="nav-count">{list.items.length}</span>{/if}
           </button>
         {/each}
@@ -720,7 +831,7 @@
         <div class="title-stack status-title">
           <div class="title-line">
             {#if snapshot.checklistHistory.length}<button class="icon-button" title="Alt+Left" onclick={() => void commit(api.backChecklist(snapshot.revision))}><Icon name="back" /></button>{/if}
-            <h2 dir="auto">{checklistDisplayName(selectedList)}</h2>
+            <h2 dir="auto"><ScriptAwareText text={checklistDisplayName(selectedList)} role="serif" /></h2>
             {#if selectedList.kind === 'NORMAL'}<span class="status-counts"><span class="status-count">{wt('active')} {selectedList.items.filter((item) => !item.completed).length}</span><span class="status-count">{wt('done')} {selectedList.items.filter((item) => item.completed).length}</span></span>{/if}
           </div>
         </div>
@@ -751,7 +862,7 @@
             {#each activeItems as item (item.id)}
               <article class:completed={item.completed} class:selected={item.id === selectedTodoId} class:held={completionHold[item.id]} class:highlighted={highlightedTodoId === item.id} class="task-row priority-{item.priority.toLowerCase()}">
                 <button class:checked={item.completed} class="completion-control" aria-label={item.completed ? t('show') : t('hide')} onclick={(event) => { event.stopPropagation(); void toggleTodo(item); }}>{#if item.completed}<Icon name="check" size={12} />{/if}</button>
-                <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto">{item.title}</strong>{#if !item.completed}<span class:overdue={item.dueAtMillis > 0 && item.dueAtMillis <= Date.now()}>{#if item.priority === 'XHIGH'}<Icon name="alarm" size={13} /> {/if}{formatDue(item)} · {priorityLabel(item.priority)} · {repeatText(item)}</span>{/if}</button>
+                <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto"><ScriptAwareText text={item.title} /></strong>{#if !item.completed}<span class:overdue={item.dueAtMillis > 0 && item.dueAtMillis <= Date.now()}>{#if item.priority === 'XHIGH'}<Icon name="alarm" size={13} /> {/if}{formatDue(item)} · {priorityLabel(item.priority)} · {repeatText(item)}</span>{/if}</button>
                 {#if item.imageFileName}<button class="attachment-badge" onclick={(event) => { event.stopPropagation(); void showImagePreview(item.id); }}><Icon name="image" /></button>{/if}
                 {#if snapshot.quickDelete}<button class="delete-slot" onclick={(event) => { event.stopPropagation(); selectedTodoId = item.id; void moveSelectedToTrash(); }}>{t('delete')}</button>{/if}
               </article>
@@ -761,7 +872,7 @@
               {#each completedItems as item (item.id)}
                 <article class:selected={item.id === selectedTodoId} class:highlighted={highlightedTodoId === item.id} class="task-row completed priority-{item.priority.toLowerCase()}">
                   <button class="completion-control checked" aria-label={t('show')} onclick={() => void toggleTodo(item)}><Icon name="check" size={12} /></button>
-                  <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto">{item.title}</strong></button>
+                  <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto"><ScriptAwareText text={item.title} /></strong></button>
                   {#if item.imageFileName}<button class="attachment-badge" onclick={() => void showImagePreview(item.id)}><Icon name="image" /></button>{/if}
                   {#if snapshot.quickDelete}<button class="delete-slot" onclick={() => { selectedTodoId = item.id; void moveSelectedToTrash(); }}>{t('delete')}</button>{/if}
                 </article>
@@ -788,7 +899,7 @@
           {:else}
             <div class="trash-toolbar"><button class="danger-button" onclick={() => void commit(api.purgeAllTrash(snapshot.revision))}>{t('delete_all')}</button></div>
             {#each selectedList.items as item (item.id)}
-              <article class="task-row trash-row"><div class="task-copy"><strong>{item.title}</strong><span>{t('from_list')} {item.trashedFromChecklistName ?? 'MAIN'}</span></div><button class="quiet-button" onclick={() => void trashAction(item, 'restore')}>{t('restore_task')}</button><button class="danger-button" onclick={() => void trashAction(item, 'purge')}>{t('delete')}</button></article>
+              <article class="task-row trash-row"><div class="task-copy"><strong dir="auto"><ScriptAwareText text={item.title} /></strong><span>{t('from_list')} <ScriptAwareText text={item.trashedFromChecklistName ?? 'MAIN'} role="serif" /></span></div><button class="quiet-button" onclick={() => void trashAction(item, 'restore')}>{t('restore_task')}</button><button class="danger-button" onclick={() => void trashAction(item, 'purge')}>{t('delete')}</button></article>
             {/each}
           {/if}
         </div>
@@ -796,7 +907,7 @@
         <div class="settings-page">
           <div class="settings-grid">
           <section>
-            <span class="section-label">{t('settings_cloud')}</span>
+            <span class="section-title">{t('settings_cloud')}</span>
             <div class="setting-row cloud-account">
               <div><strong>{t('account')}</strong><p>{snapshot.auth.userEmail ?? t('signed_out')}</p></div>
               <div class="cloud-actions">
@@ -804,24 +915,25 @@
                   <button class="cloud-icon-button" title={t('sign_out')} onclick={() => void commit(api.signOut(snapshot.revision))}><Icon name="logout" size={22} /></button>
                   <button class="cloud-icon-button" title={t('sync_now')} onclick={() => void syncNow()}><Icon name="sync" size={22} /></button>
                 {:else}
-                  <button class="cloud-icon-button" title={t('sign_in')} onclick={() => document.querySelector<HTMLInputElement>('#auth-email')?.focus()}><Icon name="login" size={22} /></button>
+                  <button
+                    class="cloud-icon-button"
+                    title={t('sign_in')}
+                    aria-label={t('sign_in')}
+                    aria-haspopup="dialog"
+                    aria-expanded={authModalOpen}
+                    disabled={authBusy}
+                    onclick={(event) => openAuthModal(event.currentTarget)}
+                  ><Icon name="login" size={22} /></button>
                 {/if}
               </div>
             </div>
-            {#if !snapshot.auth.signedIn}
-              <form class="auth-form" onsubmit={(event) => { event.preventDefault(); void authAction(); }}>
-                <div class="auth-modes"><button type="button" class:active={authMode === 'sign-in'} onclick={() => (authMode = 'sign-in')}>{t('sign_in')}</button><button type="button" class:active={authMode === 'sign-up'} onclick={() => (authMode = 'sign-up')}>{t('sign_up')}</button></div>
-                <input id="auth-email" type="email" placeholder={t('email')} bind:value={authEmail} />
-                <input type="password" placeholder={t('password')} bind:value={authPassword} />
-                <div class="auth-buttons"><button class="setting-icon-button primary" type="submit" title={authMode === 'sign-in' ? t('sign_in') : t('sign_up')} aria-label={authMode === 'sign-in' ? t('sign_in') : t('sign_up')} disabled={authBusy}><Icon name="login" size={22} /></button></div>
-              </form>
-            {:else}
+            {#if snapshot.auth.signedIn}
               <div class="setting-row">
                 <div><strong>{wt('changePassword')}</strong><p>{snapshot.auth.userEmail}</p></div>
                 <button class="setting-icon-button" title={wt('changePassword')} aria-label={wt('changePassword')} onclick={() => (passwordEditorOpen = !passwordEditorOpen)}><Icon name="key" size={20} /></button>
               </div>
               {#if passwordEditorOpen}
-                <form class="auth-form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
+                <form class="password-form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
                   <input type="password" autocomplete="current-password" placeholder={wt('currentPassword')} bind:value={currentPassword} />
                   <input type="password" autocomplete="new-password" placeholder={wt('newPassword')} bind:value={newPassword} />
                   <input type="password" autocomplete="new-password" placeholder={wt('confirmPassword')} bind:value={confirmPassword} />
@@ -833,11 +945,11 @@
           </section>
 
           <section>
-            <span class="section-label">{t('settings_display')}</span>
+            <span class="section-title">{t('settings_display')}</span>
             <div class="setting-row"><div><strong>{t('settings_language')}</strong><p>{languageOptions.find((item) => item.value === snapshot.settings.languageMode)?.label ?? t('language_system')}</p></div></div>
             <div class="language-grid">
               {#each languageOptions as language}
-                <button class:selected={snapshot.settings.languageMode === language.value} onclick={() => void setLanguage(language.value)}><span class="pixel-choice"></span><span class="language-label" dir="auto">{language.label ?? t('language_system')}</span></button>
+                <button class:selected={snapshot.settings.languageMode === language.value} onclick={() => void setLanguage(language.value)}><span class="pixel-choice"></span><span class="language-label" lang={languageTagFor(language.value)} dir={languageTagFor(language.value) === 'ar' ? 'rtl' : 'ltr'}>{language.label ?? t('language_system')}</span></button>
               {/each}
               {#if languageOptions.length % 2}<span aria-hidden="true"></span>{/if}
             </div>
@@ -845,13 +957,13 @@
           </section>
 
           <section>
-            <span class="section-label">{t('settings_dock')}</span>
+            <span class="section-title">{t('settings_dock')}</span>
             <div class="segmented-row">{#each ['LEFT_EDGE', 'CENTER', 'RIGHT_EDGE'] as placement}<button class="dock-placement-button" data-placement={placement} class:active={snapshot.settings.dock.plusPlacement === placement} title={t(placement === 'LEFT_EDGE' ? 'left' : placement === 'CENTER' ? 'center' : 'right')} aria-label={t(placement === 'LEFT_EDGE' ? 'left' : placement === 'CENTER' ? 'center' : 'right')} onclick={() => void setDockPlacement(placement as DockPlusPlacement)}><span class="placement-track"><span class="placement-plus">+</span></span></button>{/each}</div>
             <div class="dock-choice-grid">{#each allDockActions as action}<button class:selected={snapshot.settings.dock.actions.includes(action)} title={dockSettingsLabel(action)} aria-label={dockSettingsLabel(action)} aria-pressed={snapshot.settings.dock.actions.includes(action)} onclick={() => void toggleDockAction(action)}><Icon name={action === 'SORT' ? 'sort' : action === 'DEADLINE' ? 'calendar' : action === 'HIDE_DONE' ? 'hide' : action === 'DELETE_DONE' ? 'trash-check' : 'batch-delete'} size={20} active={action === 'SORT' && snapshot.sortMode === 'TIME'} /></button>{/each}</div>
           </section>
 
           <section>
-            <span class="section-label">{t('settings_updates')}</span>
+            <span class="section-title">{t('settings_updates')}</span>
             <div class="setting-row"><div><strong>{wt('automaticUpdateChecks')}</strong><p>{wt('automaticUpdateChecksDetail')}</p></div><button aria-label={wt('automaticUpdateChecks')} class:active={snapshot.settings.automaticUpdateCheckEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, automaticUpdateCheckEnabled: !snapshot.settings.automaticUpdateCheckEnabled })}><span></span></button></div>
             <div class="setting-row"><div><strong>{wt('currentVersion')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS{#if snapshot.update.message} · {uiText(snapshot.update.message)}{/if}</p></div><button class="setting-icon-button" title={t('check_update')} aria-label={t('check_update')} onclick={() => void commit(api.checkForUpdate(snapshot.revision))}><Icon name="update" size={20} /></button></div>
             {#if snapshot.update.state === 'AVAILABLE'}<button class="setting-icon-button primary section-action" title={`${t('install_updates')} ${snapshot.update.availableVersion}`} aria-label={`${t('install_updates')} ${snapshot.update.availableVersion}`} onclick={() => { updateProgress = { downloadedBytes: 0, totalBytes: null }; void api.installUpdate(); }}><Icon name="download" size={20} /></button>{/if}
@@ -859,14 +971,14 @@
           </section>
 
           <section>
-            <span class="section-label">{wt('windowsIntegration')}</span>
+            <span class="section-title">{wt('windowsIntegration')}</span>
             <div class="setting-row"><div><strong>{wt('startWithWindows')}</strong><p>{wt('startWithWindowsDetail')}</p></div><button aria-label={wt('startWithWindows')} class:active={snapshot.settings.autostartEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, autostartEnabled: !snapshot.settings.autostartEnabled })}><span></span></button></div>
             <div class="setting-row"><div><strong>{wt('enhancedAlarm')}</strong><p>{wt('enhancedAlarmDetail')}</p></div><button aria-label={wt('enhancedAlarm')} class:active={snapshot.settings.enhancedXhighAlarmEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, enhancedXhighAlarmEnabled: !snapshot.settings.enhancedXhighAlarmEnabled })}><span></span></button></div>
             <div class="setting-row"><div><strong>{wt('reminderQueue')}</strong><p>{snapshot.reminder.scheduledCount} · {snapshot.reminder.state}{#if snapshot.reminder.message} · {uiText(snapshot.reminder.message)}{/if}</p></div></div>
           </section>
 
           <section>
-            <span class="section-label">{wt('storagePrivacy')}</span>
+            <span class="section-title">{wt('storagePrivacy')}</span>
             {#if storageInfo}
               <div class="setting-row storage-row"><div><strong>{wt('application')}</strong><p><code>{storageInfo.executablePath}</code></p></div></div>
               <div class="setting-row storage-row"><div><strong>{wt('localData')}</strong><p><code>{storageInfo.dataRoot}</code> · {formatBytes(storageInfo.totalBytes)}</p></div><button class="setting-icon-button" title={wt('openFolder')} aria-label={wt('openFolder')} onclick={() => void api.openDataFolder()}><Icon name="folder" size={20} /></button></div>
@@ -882,6 +994,23 @@
     </section>
 
   </main>
+
+  {#if authModalOpen && !snapshot.auth.signedIn}
+    <AuthModal
+      {locale}
+      mode={authMode}
+      email={authEmail}
+      password={authPassword}
+      busy={authBusy}
+      error={authError}
+      errorKind={authErrorKind}
+      onModeChange={setAuthMode}
+      onEmailChange={updateAuthEmail}
+      onPasswordChange={updateAuthPassword}
+      onSubmit={authAction}
+      onClose={closeAuthModal}
+    />
+  {/if}
 
   {#if selectedList.kind === 'NORMAL' && editorMode.kind !== 'closed'}
     <TodoEditorModal
@@ -906,11 +1035,11 @@
         {#if conflicts.length === 0}<p>{t('no_conflicts')}</p>{/if}
         {#each conflicts as conflict}
           <article class="conflict-card">
-            <h3>{conflictTitle(conflict)}</h3>
+            <h3><ScriptAwareText text={conflictTitle(conflict)} /></h3>
             <div class="conflict-table">
               <div class="conflict-table-head"><span></span><strong>{wt('thisDevice')}</strong><strong>{wt('cloudVersion')}</strong></div>
               {#each conflict.fields as field}
-                <div class="conflict-field-row"><strong>{conflictFieldLabel(field)}</strong><span>{conflictValueText(field.localValue)}</span><span>{conflictValueText(field.cloudValue)}</span></div>
+                <div class="conflict-field-row"><strong>{conflictFieldLabel(field)}</strong><span><ScriptAwareText text={conflictValueText(field.localValue)} /></span><span><ScriptAwareText text={conflictValueText(field.cloudValue)} /></span></div>
               {/each}
             </div>
             <div class="form-actions"><button class="quiet-button" onclick={() => void resolveConflict(conflict, 'KEEP_LOCAL')}>{wt('useThisDevice')}</button><button class="primary-button" onclick={() => void resolveConflict(conflict, 'KEEP_CLOUD')}>{wt('useCloudVersion')}</button></div>

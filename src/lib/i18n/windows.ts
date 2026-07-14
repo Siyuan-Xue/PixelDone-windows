@@ -50,6 +50,8 @@ const english = {
 
 export type WindowsMessageKey = keyof typeof english;
 
+export type WindowsAuthValidationKey = 'invalidEmail' | 'passwordTooShort';
+
 const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
   en: english,
   'zh-Hans': {
@@ -134,6 +136,40 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
   }
 };
 
+const authValidationTranslations: Record<Locale, Record<WindowsAuthValidationKey, string>> = {
+  en: {
+    invalidEmail: 'Enter a valid email address.',
+    passwordTooShort: 'Password must contain at least 6 characters.'
+  },
+  'zh-Hans': {
+    invalidEmail: '\u8bf7\u8f93\u5165\u6709\u6548\u7684\u90ae\u7bb1\u5730\u5740\u3002',
+    passwordTooShort: '\u5bc6\u7801\u81f3\u5c11\u9700\u8981 6 \u4e2a\u5b57\u7b26\u3002'
+  },
+  ar: {
+    invalidEmail: '\u0623\u062f\u062e\u0644 \u0639\u0646\u0648\u0627\u0646 \u0628\u0631\u064a\u062f \u0625\u0644\u0643\u062a\u0631\u0648\u0646\u064a \u0635\u0627\u0644\u062d\u064b\u0627.',
+    passwordTooShort: '\u064a\u062c\u0628 \u0623\u0646 \u062a\u062a\u0643\u0648\u0646 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0645\u0646 6 \u0623\u062d\u0631\u0641 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644.'
+  },
+  fr: {
+    invalidEmail: 'Saisissez une adresse e-mail valide.',
+    passwordTooShort: 'Le mot de passe doit contenir au moins 6 caract\u00e8res.'
+  },
+  ru: {
+    invalidEmail: '\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439 \u0430\u0434\u0440\u0435\u0441 \u044d\u043b\u0435\u043a\u0442\u0440\u043e\u043d\u043d\u043e\u0439 \u043f\u043e\u0447\u0442\u044b.',
+    passwordTooShort: '\u041f\u0430\u0440\u043e\u043b\u044c \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u043d\u0435 \u043c\u0435\u043d\u0435\u0435 6 \u0441\u0438\u043c\u0432\u043e\u043b\u043e\u0432.'
+  },
+  es: {
+    invalidEmail: 'Introduce una direcci\u00f3n de correo v\u00e1lida.',
+    passwordTooShort: 'La contrase\u00f1a debe tener al menos 6 caracteres.'
+  }
+};
+
 export function windowsMessage(locale: Locale, key: WindowsMessageKey): string {
   return translations[locale][key];
+}
+
+export function windowsAuthValidationMessage(
+  locale: Locale,
+  key: WindowsAuthValidationKey
+): string {
+  return authValidationTranslations[locale][key];
 }

@@ -1,8 +1,8 @@
 # PixelDone Windows 功能复刻报告
 
-> 本文件由 `bun run parity:report` 从 `parity/pixeldone-3.2.4.yaml` 生成，请勿手工维护状态。
+> 本文件由 `bun run parity:report` 从 `parity/pixeldone-3.2.5.yaml` 生成，请勿手工维护状态。
 
-Windows 目标：PixelDone Windows 3.2.4（formal_release）。
+Windows 目标：PixelDone Windows 3.2.5（formal_release）。
 
 功能基线：PixelDone Android 3.1.0（versionCode 78，commit `63471218345f6a4efcdbbd32c2d4c42acb25491c`，Room v5）。
 
@@ -44,19 +44,19 @@ Windows 目标：PixelDone Windows 3.2.4（formal_release）。
 | SETTINGS-DOCK-001 | settings | Dock 位置与最多四动作配置 | 是 | verified | none |
 | SETTINGS-LANGUAGE-001 | settings | 七项语言两列排列、原生名称与 RTL | 是 | verified | none |
 | SETTINGS-CLOUD-ICONS-001 | settings | 登录、镜像登出与同步图标几何 | 是 | verified | none |
-| AUTH-001 | auth | 注册、登录、退出与验证旧密码后的密码修改/全局退出 | 是 | in_progress | none |
+| AUTH-001 | auth | Register, sign in, sign out, and change password after verifying the current password/global sign-out | 是 | in_progress | none |
 | CREDENTIAL-001 | auth | 凭据安全存储 | 是 | verified | platform-equivalent: Windows Credential Manager |
 | SYNC-MANUAL-001 | sync | 手动与自动同步 | 是 | in_progress | platform-equivalent: event-driven Realtime invalidation plus transactional pull; no fixed-interval polling |
 | SYNC-CAS-001 | sync | 原子 mutation、CAS、change feed 与 schema negotiation | 是 | in_progress | none |
 | SYNC-CONFLICT-001 | sync | 冲突记录、字段差异与 LOCAL/CLOUD 审查 | 是 | verified | none |
-| SYNC-IMAGE-LOCAL-001 | sync | 图片传输与待办正文同步解耦，失败不阻塞普通同步 | 是 | in_progress | none |
+| SYNC-IMAGE-LOCAL-001 | sync | Keep attachment transfer separate from todo text sync so image failures do not block ordinary sync | 是 | in_progress | none |
 | SYNC-HTTP-001 | sync | 指定 Supabase endpoint 的长期 HTTP 正式策略 | 是 | verified | accepted insecure HTTP/ws transport risk; no HTTPS migration |
 | UPDATE-SOURCE-001 | update | GitHub 优先与 Gitee 回退 | 是 | verified | none |
 | UPDATE-CHANNEL-001 | update | stable 与 beta/RC 独立应用标识和清单 | 是 | verified | none |
 | WINDOWS-TRAY-001 | platform | 托盘常驻、关闭隐藏、单实例与开机启动 | 是 | verified | platform-equivalent: Windows tray/autostart/single-instance |
 | DATABASE-PATH-001 | storage | 官方 LocalAppData 分目录、SQLite 重启恢复与卸载保留 | 是 | verified | platform-equivalent local databases; no shared SQLite file |
 | RELEASE-NSIS-001 | release | Windows x64 NSIS、SHA-256 与 Tauri updater signature | 是 | verified | platform-equivalent: unsigned-publisher NSIS plus signed updater; SmartScreen accepted |
-| IMAGE-CLOUD-EXCLUDED | image | 私有 Supabase Storage 原图上传、按需下载、跨端替换与清理 | 是 | in_progress | none |
+| IMAGE-CLOUD-EXCLUDED | image | Private Supabase Storage upload, on-demand download, cross-device replacement, and cleanup | 是 | in_progress | none |
 | SOURCE-BATCH-MOVE-001 | excluded | 源码存在但 Android UI 不可达的批量移动 | 否 | not_started | excluded_source_only |
 
 正式发布门槛固定为 100.00%、0 blocked、0 in_progress、0 not_started、0 missing evidence。非 required 项只允许用于记录双方明确排除的源码能力。

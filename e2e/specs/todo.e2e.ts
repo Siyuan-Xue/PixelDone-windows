@@ -31,9 +31,9 @@ describe('Todo and Dock parity', () => {
       settings: { ...snapshot.settings, languageMode: 'SIMPLIFIED_CHINESE' }
     });
     await browser.refresh();
-    const row = await $(`//*[contains(@class,'task-row')][.//strong[text()='E2E TODO']]`);
+    const row = await $(`//*[contains(@class,'task-row')][.//strong[normalize-space(.)='E2E TODO']]`);
     await expect(row).toBeDisplayed();
-    const metadata = await row.$('.task-copy span').getText();
+    const metadata = await row.$('.task-copy > span').getText();
     expect(metadata).toContain('超高');
     expect(metadata).not.toContain('XHIGH');
     const completion = await row.$('button.completion-control');
@@ -42,11 +42,11 @@ describe('Todo and Dock parity', () => {
     await completion.click();
     expect(await row.getAttribute('class')).toContain('held');
     await browser.waitUntil(async () => {
-      const completedRow = await $(`//*[contains(@class,'task-row')][.//strong[text()='E2E TODO']]`);
+      const completedRow = await $(`//*[contains(@class,'task-row')][.//strong[normalize-space(.)='E2E TODO']]`);
       const classes = await completedRow.getAttribute('class');
       return Boolean(classes?.includes('completed') && !classes.includes('held'));
     });
-    const completedRow = await $(`//*[contains(@class,'task-row')][.//strong[text()='E2E TODO']]`);
+    const completedRow = await $(`//*[contains(@class,'task-row')][.//strong[normalize-space(.)='E2E TODO']]`);
     expect(await completedRow.getAttribute('class')).not.toContain('held');
     expect(await completedRow.getAttribute('class')).toContain('completed');
 

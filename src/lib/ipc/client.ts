@@ -18,6 +18,11 @@ import type {
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
+    __PIXELDONE_E2E_AUTH_SIGN_IN__?: (input: {
+      expectedRevision: number;
+      email: string;
+      password: string;
+    }) => Promise<MutationResult>;
   }
 }
 
@@ -44,7 +49,7 @@ let browserSnapshot: AppSnapshot = {
   auth: { cloudAvailable: true, signedIn: false, userId: null, userEmail: null, insecureHttp: true },
   sync: { state: 'SIGNED_OUT', message: '浏览器预览模式', remoteVersion: null, pendingCount: 0, conflictCount: 0, insecureHttp: true },
   reminder: { state: 'IDLE', activeTodoIds: [], lastFiredAtMillis: null, scheduledCount: 0, scheduleHorizonAtMillis: null, scheduleTruncated: false, message: null },
-  update: { state: 'CURRENT', currentVersion: '3.2.4', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
+  update: { state: 'CURRENT', currentVersion: '3.2.5', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
   checklists: [
     {
       id: 'main',
@@ -371,6 +376,9 @@ export const api = {
     });
   },
   async signIn(expectedRevision: number, email: string, password: string): Promise<MutationResult> {
+    if (import.meta.env.MODE === 'e2e' && window.__PIXELDONE_E2E_AUTH_SIGN_IN__) {
+      return window.__PIXELDONE_E2E_AUTH_SIGN_IN__({ expectedRevision, email, password });
+    }
     return invoke('auth_sign_in', { expectedRevision, email, password });
   },
   async signUp(expectedRevision: number, email: string, password: string): Promise<MutationResult> {

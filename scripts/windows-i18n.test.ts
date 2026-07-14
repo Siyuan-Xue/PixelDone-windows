@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { windowsMessage } from '../src/lib/i18n/windows';
+import { windowsAuthValidationMessage, windowsMessage } from '../src/lib/i18n/windows';
 import { uiText, uiWindowsMessage } from '../src/lib/i18n/presentation';
 
 const signedOutSyncMessages = {
@@ -23,6 +23,14 @@ describe('Windows localization', () => {
       expect(windowsMessage(locale as keyof typeof signedOutSyncMessages, 'changePassword').trim()).not.toBe('');
       expect(windowsMessage(locale as keyof typeof signedOutSyncMessages, 'currentPassword').trim()).not.toBe('');
       expect(windowsMessage(locale as keyof typeof signedOutSyncMessages, 'confirmPassword').trim()).not.toBe('');
+    }
+  });
+
+  it('provides account-dialog validation copy for every supported locale', () => {
+    for (const locale of Object.keys(signedOutSyncMessages)) {
+      const supportedLocale = locale as keyof typeof signedOutSyncMessages;
+      expect(windowsAuthValidationMessage(supportedLocale, 'invalidEmail').trim()).not.toBe('');
+      expect(windowsAuthValidationMessage(supportedLocale, 'passwordTooShort')).toContain('6');
     }
   });
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '$lib/components/common/Icon.svelte';
+  import ScriptAwareText from '$lib/components/common/ScriptAwareText.svelte';
   import { type Locale, type MessageKey } from '$lib/generated/i18n';
   import { uiMessage } from '$lib/i18n/presentation';
   import type { TodoDraft, TodoItem, TodoPriority } from '$lib/generated/ipc';
@@ -94,7 +95,7 @@
     <header class="modal-header">
       <div>
         <span class="eyebrow">{mode.kind === 'new' ? t('new_task') : t('edit_task')}</span>
-        <h2 id="todo-editor-title">{todo?.title ?? t('new_task')}</h2>
+        <h2 id="todo-editor-title"><ScriptAwareText text={todo?.title ?? t('new_task')} role="serif" /></h2>
       </div>
       <button class="icon-button" type="button" title={t('close')} aria-label={t('close')} onclick={onClose}><Icon name="close" /></button>
     </header>
