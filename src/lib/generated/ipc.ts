@@ -94,10 +94,20 @@ export interface SyncConflictView {
   recordType: string;
   localId: string;
   title: string;
-  fields: string[];
-  localPayload: Record<string, unknown> | null;
-  cloudPayload: Record<string, unknown> | null;
-  message: string;
+  fields: SyncConflictFieldView[];
+  messageCode: string;
+}
+
+export interface SyncConflictFieldView {
+  key: string;
+  localValue: SyncConflictValueView;
+  cloudValue: SyncConflictValueView;
+}
+
+export interface SyncConflictValueView {
+  kind: 'empty' | 'text' | 'checklist' | 'position' | 'status' | 'priority' | 'timestamp' | 'repeat' | 'language';
+  value: unknown;
+  label: string | null;
 }
 
 export interface ReminderRunView {

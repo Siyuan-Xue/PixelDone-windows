@@ -34,6 +34,21 @@ pub struct StoredConflict {
     pub remote_version: Option<i64>,
 }
 
+#[derive(Clone, Debug)]
+pub struct StoredPristineRecord {
+    pub record_type: String,
+    pub local_id: String,
+    pub payload_json: String,
+    pub remote_version: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredMutation {
+    pub mutation_uuid: String,
+    pub base_version: Option<i64>,
+    pub payload_json: String,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ReminderDeliveryState {
     pub scheduled_at_millis: Option<i64>,
@@ -557,7 +572,10 @@ impl SqliteRepository {
 
         let mut transaction = self.pool.begin().await?;
         for (id, list) in &after_lists {
-            if before_lists.get(id).copied() != Some(*list) {
+            if before_lists
+                .get(id)
+                .is_none_or(|before| checklist_sync_metadata_changed(before, list))
+            {
                 mark_dirty(&mut transaction, "checklist", id).await?;
             }
         }
@@ -605,6 +623,165 @@ impl SqliteRepository {
         sqlx::query("DELETE FROM sync_dirty_records WHERE record_type = ? AND local_id = ?")
             .bind(record_type)
             .bind(local_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn mark_dirty(&self, record_type: &str, local_id: &str) -> Result<(), AppError> {
+        let mut transaction = self.pool.begin().await?;
+        mark_dirty(&mut transaction, record_type, local_id).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn pristine_initialized(&self, owner: &str) -> Result<bool, AppError> {
+        Ok(sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sync_pristine_state WHERE owner_user_id = ?",
+        )
+        .bind(owner)
+        .fetch_one(&self.pool)
+        .await?
+            > 0)
+    }
+
+    pub async fn mark_pristine_initialized(&self, owner: &str) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO sync_pristine_state (owner_user_id, initialized_at_millis) VALUES (?, ?) ON CONFLICT(owner_user_id) DO UPDATE SET initialized_at_millis = excluded.initialized_at_millis",
+        )
+        .bind(owner)
+        .bind(crate::domain::unix_now_millis())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn pristine_record(
+        &self,
+        owner: &str,
+        record_type: &str,
+        local_id: &str,
+    ) -> Result<Option<StoredPristineRecord>, AppError> {
+        let row = sqlx::query(
+            "SELECT record_type, local_id, payload_json, remote_version FROM sync_pristine_records WHERE owner_user_id = ? AND record_type = ? AND local_id = ?",
+        )
+        .bind(owner)
+        .bind(record_type)
+        .bind(local_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| {
+            Ok(StoredPristineRecord {
+                record_type: row.try_get("record_type")?,
+                local_id: row.try_get("local_id")?,
+                payload_json: row.try_get("payload_json")?,
+                remote_version: row.try_get("remote_version")?,
+            })
+        })
+        .transpose()
+    }
+
+    pub async fn save_pristine_record(
+        &self,
+        owner: &str,
+        record_type: &str,
+        local_id: &str,
+        payload_json: &str,
+        remote_version: Option<i64>,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO sync_pristine_records (owner_user_id, record_type, local_id, payload_json, remote_version, updated_at_millis) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(owner_user_id, record_type, local_id) DO UPDATE SET payload_json = excluded.payload_json, remote_version = excluded.remote_version, updated_at_millis = excluded.updated_at_millis",
+        )
+        .bind(owner)
+        .bind(record_type)
+        .bind(local_id)
+        .bind(payload_json)
+        .bind(remote_version)
+        .bind(crate::domain::unix_now_millis())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_pristine_record(
+        &self,
+        owner: &str,
+        record_type: &str,
+        local_id: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "DELETE FROM sync_pristine_records WHERE owner_user_id = ? AND record_type = ? AND local_id = ?",
+        )
+        .bind(owner)
+        .bind(record_type)
+        .bind(local_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn pending_mutation(&self, owner: &str) -> Result<Option<StoredMutation>, AppError> {
+        let row = sqlx::query(
+            "SELECT mutation_uuid, base_version, payload_json FROM sync_mutations WHERE owner_user_id = ? ORDER BY created_at_millis LIMIT 1",
+        )
+        .bind(owner)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| {
+            Ok(StoredMutation {
+                mutation_uuid: row.try_get("mutation_uuid")?,
+                base_version: row.try_get("base_version")?,
+                payload_json: row.try_get("payload_json")?,
+            })
+        })
+        .transpose()
+    }
+
+    pub async fn save_pending_mutation(
+        &self,
+        owner: &str,
+        mutation_uuid: &str,
+        base_version: i64,
+        payload_json: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO sync_mutations (owner_user_id, mutation_uuid, base_version, payload_json, created_at_millis, attempts) VALUES (?, ?, ?, ?, ?, 0)",
+        )
+        .bind(owner)
+        .bind(mutation_uuid)
+        .bind(base_version)
+        .bind(payload_json)
+        .bind(crate::domain::unix_now_millis())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn mark_mutation_attempt(
+        &self,
+        owner: &str,
+        mutation_uuid: &str,
+        error: Option<&str>,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE sync_mutations SET attempts = attempts + 1, last_error = ? WHERE owner_user_id = ? AND mutation_uuid = ?",
+        )
+        .bind(error)
+        .bind(owner)
+        .bind(mutation_uuid)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_pending_mutation(
+        &self,
+        owner: &str,
+        mutation_uuid: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM sync_mutations WHERE owner_user_id = ? AND mutation_uuid = ?")
+            .bind(owner)
+            .bind(mutation_uuid)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -728,9 +905,26 @@ impl SqliteRepository {
         Ok(())
     }
 
+    pub async fn delete_synthetic_checklist_conflicts(&self) -> Result<(), AppError> {
+        sqlx::query(
+            "DELETE FROM sync_conflicts WHERE record_type = 'checklist' AND local_id IN ('trash', 'settings')",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn close(self) {
         self.pool.close().await;
     }
+}
+
+fn checklist_sync_metadata_changed(before: &Checklist, after: &Checklist) -> bool {
+    before.id != after.id
+        || before.name != after.name
+        || before.kind != after.kind
+        || before.created_at_millis != after.created_at_millis
+        || before.updated_at_millis != after.updated_at_millis
 }
 
 fn read_attachment(row: sqlx::sqlite::SqliteRow) -> Result<LocalTodoAttachment, AppError> {

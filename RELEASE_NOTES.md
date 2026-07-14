@@ -1,23 +1,24 @@
-# PixelDone for Windows 3.2.3
+# PixelDone for Windows 3.2.4
 
-PixelDone for Windows 3.2.3 is an emergency startup hotfix for 3.2.1.
+PixelDone for Windows 3.2.4 starts from the published 3.2.3 baseline and focuses on synchronization correctness, conflict clarity, and cross-platform presentation.
 
-## Fix
+## Synchronization
 
-- Fixes the immediate startup exit seen after installing 3.2.1 over a database previously used by 3.2.0.
-- Preserves the exact migration 7 checksum deployed by 3.2.0 instead of allowing the GitHub Windows checkout to change LF bytes to CRLF.
-- Adds Bun and Rust checksum regression tests and runs the Bun suite as a required release gate.
-- Preserves existing todos, settings, authentication state, attachments, and the complete 3.2.1 UI update.
+- Stops a todo edit from falsely marking its parent checklist as changed.
+- Adds durable pristine cloud records and mutation payloads to SQLite.
+- Uses field-level three-way merge: independent local and cloud edits merge automatically; only a different edit to the same semantic field opens Review.
+- Reuses the same mutation UUID and payload after a transient failure.
+- Excludes the local-only Trash and Settings destinations from checklist upload, tombstones, and conflict review.
+- Keeps Supabase Realtime subscriptions for checklists, todos, attachments, settings, and tombstones. There is no fixed-interval cloud polling loop; Realtime events trigger a debounced transactional cursor pull.
 
-## Installation and update
+## Interface
 
-- Run `PixelDone_3.2.3_x64-setup.exe` to overwrite 3.2.1 or the locally validated 3.2.2 candidate for the current Windows user. Do not delete the PixelDone data directory.
-- The installer intentionally has no Authenticode publisher signature, so Windows may display an unknown-publisher warning.
-- The detached Tauri updater signature and `latest.json` provide update-download integrity checking; they do not provide Windows publisher identity authentication.
+- Replaces raw conflict JSON and ambiguous numeric summaries with named fields, human-readable values, and explicit “This device” / “Cloud version” choices.
+- Removes the separator, label, and action controls between active and completed todos.
+- Bundles OFL-licensed Source and Noto families. Serif faces are used for significant headings and sans-serif faces for compact UI text, including Chinese and Arabic-specific families.
 
-## Verification and existing scope
+## Release status
 
-- The 3.2.1 failure was reproduced with exit code 101 and an explicit SQLx migration checksum error.
-- A disposable copy of the affected installed database upgraded through migration 8 with SQLite integrity `ok` and its existing sidebar width preserved.
-- PixelDone 3.2 remains a hard protocol cutover and intentionally uses the configured direct-IP Supabase deployment over cleartext HTTP/WS.
-- The six previously documented cross-device cloud rows and installed notification presentation remain incomplete and are not represented as passed by this hotfix.
+- Version metadata, tag, updater manifest, and the x64 NSIS artifact target 3.2.4.
+- The formal NSIS package carries the required Tauri updater integrity signature. Authenticode remains intentionally disabled, so Windows can still identify the installer as an unknown publisher.
+- Existing cleartext HTTP/WS deployment risk remains unchanged. Six cross-device cloud scenarios remain explicitly authorized release exceptions and are not represented as verified.

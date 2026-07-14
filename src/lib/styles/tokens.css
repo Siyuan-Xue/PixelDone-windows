@@ -1,3 +1,46 @@
+@font-face {
+  font-family: 'PixelDone Source Sans';
+  src: url('../assets/fonts/source_sans_3_variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PixelDone Source Serif';
+  src: url('../assets/fonts/source_serif_4_variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PixelDone Noto Sans SC';
+  src: url('../assets/fonts/noto_sans_sc_variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PixelDone Noto Serif SC';
+  src: url('../assets/fonts/noto_serif_sc_variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PixelDone Noto Sans Arabic';
+  src: url('../assets/fonts/noto_sans_arabic_variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PixelDone Noto Naskh Arabic';
+  src: url('../assets/fonts/noto_naskh_arabic_variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
   --grid: 4px;
@@ -25,7 +68,19 @@
   --sidebar-width: 320px;
   --workspace-status-height: 64px;
   --radius: 0px;
-  --font-ui: 'Cascadia Mono', Consolas, 'Microsoft YaHei UI', monospace;
+  --font-sans: 'PixelDone Source Sans', sans-serif;
+  --font-serif: 'PixelDone Source Serif', serif;
+  --font-ui: var(--font-sans);
+}
+
+:root:lang(zh) {
+  --font-sans: 'PixelDone Noto Sans SC', sans-serif;
+  --font-serif: 'PixelDone Noto Serif SC', serif;
+}
+
+:root:lang(ar) {
+  --font-sans: 'PixelDone Noto Sans Arabic', sans-serif;
+  --font-serif: 'PixelDone Noto Naskh Arabic', serif;
 }
 
 :root[data-theme='dark'] {

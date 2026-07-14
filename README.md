@@ -1,11 +1,11 @@
 # PixelDone Windows
 
-PixelDone for Windows 3.2.3 正式版源码。3.2.3 修复 3.2.1 在既有用户数据库上因迁移校验和差异导致的启动闪退，并保留全部 3.2.1 界面改进。
+当前工作树是 PixelDone for Windows 3.2.4 正式版。3.2.4 基于已发布 3.2.3，修复本地编辑误触发冲突，并统一两端冲突表达与字体层级。
 
 ## 版本基线
 
-- Android：当前正式版为 PixelDone 3.2.0，使用 Room v6。
-- Windows：当前正式版本为 PixelDone for Windows 3.2.3；安装身份、数据目录与 3.1.x 保持不变。
+- Android：配套正式版为 PixelDone 3.2.2（versionCode 83，Room v7）。
+- Windows：当前正式版本为 3.2.4，安装身份与数据目录保持不变。
 - Android 与 Windows：Supabase 3.2 两阶段迁移及单行总验收已于 2026-07-13 全部通过。
 - Windows：Rust 1.96.1 / Edition 2024、Tauri 2、Svelte 5.56.4、TypeScript 6.0.2、Bun 1.3.14。
 - 支持范围：Windows 11 24H2+，仅发布 x64 NSIS 安装包。
@@ -15,7 +15,7 @@ PixelDone for Windows 3.2.3 正式版源码。3.2.3 修复 3.2.1 在既有用户
 
 ## 安装与运行
 
-当前正式版使用 `PixelDone_3.2.3_x64-setup.exe` 完成当前用户安装。正式默认目录是 `%LOCALAPPDATA%\PixelDone`，主程序名为 `PixelDone.exe`。路径中的 `test` 仅可能来自历史验收时显式指定的临时目录，不是正式安装器配置。
+当前正式版使用 `PixelDone_3.2.4_x64-setup.exe`。正式默认目录是 `%LOCALAPPDATA%\PixelDone`，主程序名为 `PixelDone.exe`。
 
 重复运行相同或更高版本的 EXE 会进入 NSIS 维护/升级流程并覆盖同一产品安装，不会创建多个 PixelDone。Beta 使用独立产品标识，允许与正式版并存。
 
@@ -23,11 +23,11 @@ PixelDone for Windows 3.2.3 正式版源码。3.2.3 修复 3.2.1 在既有用户
 
 ## 桌面界面
 
-3.2.3 保留 3.2.1 的 Options 命名、可调边栏、Android Dock 图标、固定尺寸设置图标按钮、完成控件与优先级本地化，并修复正式构建中的迁移 7 换行符校验和回归；验证记录见 3.2.3 parity evidence。
+3.2.4 取消 Active 与 Done 之间的分割区域及其文字/按钮，让完成项直接跟在未完成项后；冲突复核改为明确的字段、此设备值和云端值。验证记录见 3.2.4 release evidence。
 
 - 左侧栏集中显示普通清单、回收站、设置、账号和同步摘要；独立方形按钮负责新建清单，不再使用长按任务“+”按钮的移动端手势。
 - 主工作区顶部显示当前清单、Active/Done 数量、同步状态以及按需出现的冲突、通知和更新异常。
-- 主内容沿用 Android 的优先级色条、方形完成控件、暖白/深灰面板和等宽字体；回收站与设置也在同一主工作区切换。
+- 主内容沿用 Android 的优先级色条、方形完成控件和暖白/深灰面板；大标题使用衬线字体，小型 UI 使用无衬线字体，并为中文、阿拉伯文绑定专用 Noto 字体。
 - 底部 Dock 使用互相分离的方形动作按钮和 56px clay“+”按钮；“+”只新建任务，位置继续由本机 Dock 设置控制。
 - 新建和编辑任务使用居中的直角矩形模态框，不再占用永久第三栏。
 
@@ -94,4 +94,4 @@ $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw 'src-tauri/signing/pixeldone-u
 bun tauri build --bundles nsis --target x86_64-pc-windows-msvc
 ```
 
-Supabase 3.2 Storage 策略、公共 schema 迁移及总验收已通过，不得修改 Supabase 托管的 Storage 表所有权。用户在知悉 parity 尚未达到 100% 后明确授权发布 3.2.1；3.2.3 仅修复该版本的启动回归，不扩大功能范围。双设备原图同步、密码全局退出与 Realtime 安装态回归仍保持未验证状态，不得表述为已通过。通知快捷方式目标校验已自动测试，但真实安装后的通知展示仍需独立人工回归。
+Supabase 3.2 Storage 策略和公共 schema 保持不变。3.2.4 是正式发布；发布清单仍明确保留六项跨设备云端场景作为已授权但尚未完成的验证项，不应将它们误报为已验证。

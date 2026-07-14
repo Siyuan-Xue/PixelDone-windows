@@ -41,10 +41,24 @@ pub struct SyncConflictView {
     pub record_type: String,
     pub local_id: String,
     pub title: String,
-    pub fields: Vec<String>,
-    pub local_payload: serde_json::Value,
-    pub cloud_payload: serde_json::Value,
-    pub message: String,
+    pub fields: Vec<SyncConflictFieldView>,
+    pub message_code: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConflictFieldView {
+    pub key: String,
+    pub local_value: SyncConflictValueView,
+    pub cloud_value: SyncConflictValueView,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConflictValueView {
+    pub kind: String,
+    pub value: serde_json::Value,
+    pub label: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

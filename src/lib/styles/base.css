@@ -4,6 +4,7 @@ button, input, select { font: inherit; color: inherit; }
 button { min-width: 0; overflow: hidden; cursor: default; text-overflow: ellipsis; white-space: nowrap; }
 button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { font-family: var(--font-serif); }
 h1 { font-size: 22px; line-height: 28px; letter-spacing: 0; }
 h2 { font-size: 22px; line-height: 28px; letter-spacing: 0; }
 h3 { font-size: 16px; line-height: 22px; }
@@ -19,6 +20,7 @@ h3 { font-size: 16px; line-height: 22px; }
 input, select { min-height: 44px; width: 100%; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); padding: 8px 10px; }
 input:hover, select:hover { border-color: var(--text-muted); }
 kbd { display: inline-block; min-width: 22px; padding: 2px 4px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 3px; background: var(--surface-raised); text-align: center; font-size: 10px; }
+.status-chip, time, [data-numeric='true'] { font-variant-numeric: tabular-nums; }
 .launch-state { width: 100vw; height: 100vh; display: grid; place-content: center; justify-items: center; gap: 12px; background: var(--bg); color: var(--text-secondary); }
 .launch-mark { display: grid; place-items: center; width: 48px; height: 48px; border: 2px solid var(--border-strong); font-weight: 800; color: var(--text); }
 .launch-state.error .launch-mark { color: var(--error); border-color: var(--error); }

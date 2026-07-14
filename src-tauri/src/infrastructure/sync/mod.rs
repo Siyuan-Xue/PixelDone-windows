@@ -7,7 +7,8 @@ use uuid::Uuid;
 use crate::{
     domain::{
         AppError, AppLanguage, AppSnapshot, Checklist, ChecklistKind, ReminderRepeat,
-        SyncConflictView, SyncRunView, SyncState, TodoItem, TodoPriority, unix_now_millis,
+        SETTINGS_CHECKLIST_ID, SyncConflictFieldView, SyncConflictValueView, SyncConflictView,
+        SyncRunView, SyncState, TRASH_CHECKLIST_ID, TodoItem, TodoPriority, unix_now_millis,
     },
     infrastructure::{
         auth::{AuthSession, SupabaseClient},
@@ -133,6 +134,21 @@ struct RemoteConflict {
     message: String,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct MutationPayload {
+    #[serde(default)]
+    checklists: Vec<RemoteChecklist>,
+    #[serde(default)]
+    items: Vec<RemoteTodo>,
+    #[serde(default)]
+    attachments: Vec<RemoteAttachment>,
+    settings: Option<RemoteSettings>,
+    #[serde(default)]
+    tombstones: Vec<RemoteTombstone>,
+    #[serde(default)]
+    cleaned_image_paths: Vec<String>,
+}
+
 pub async fn run_sync(
     cloud: &SupabaseClient,
     repository: &SqliteRepository,
@@ -140,7 +156,13 @@ pub async fn run_sync(
     snapshot: &mut AppSnapshot,
     attachments_dir: &Path,
 ) -> Result<SyncRunView, AppError> {
+    repository.delete_synthetic_checklist_conflicts().await?;
     let cursor = repository.sync_cursor(&session.user_id).await?;
+    let pull_from = if repository.pristine_initialized(&session.user_id).await? {
+        cursor
+    } else {
+        0
+    };
     let dirty = repository.dirty_records().await?;
     let dirty_keys = dirty
         .iter()
@@ -151,19 +173,43 @@ pub async fn run_sync(
             session,
             "pixeldone_pull_changes",
             json!({
-                "p_since_version": cursor,
+                "p_since_version": pull_from,
                 "p_client_schema_version": EXPECTED_SCHEMA,
             }),
         )
         .await?;
     require_schema(&pulled.schema_version)?;
-    apply_tombstones(repository, snapshot, &pulled.tombstones, attachments_dir).await?;
-    apply_remote_changes(repository, snapshot, &pulled, &dirty_keys).await?;
+    let blocked_keys = repository
+        .conflicts()
+        .await?
+        .into_iter()
+        .map(|conflict| format!("{}:{}", conflict.record_type, conflict.local_id))
+        .collect::<HashSet<_>>();
+    apply_tombstones(
+        repository,
+        snapshot,
+        &session.user_id,
+        &pulled.tombstones,
+        attachments_dir,
+    )
+    .await?;
+    apply_remote_changes(
+        repository,
+        snapshot,
+        &session.user_id,
+        &pulled,
+        &dirty_keys,
+        &blocked_keys,
+    )
+    .await?;
     apply_remote_attachments(repository, snapshot, &pulled.attachments, attachments_dir).await?;
     drain_local_cleanup_queue(cloud, repository, session).await?;
     repository.save_snapshot(snapshot).await?;
     repository
         .save_sync_cursor(&session.user_id, pulled.server_version)
+        .await?;
+    repository
+        .mark_pristine_initialized(&session.user_id)
         .await?;
 
     let cleaned_image_paths =
@@ -171,10 +217,17 @@ pub async fn run_sync(
     prepare_pending_attachments(cloud, repository, session, snapshot, attachments_dir).await?;
 
     let dirty = repository.dirty_records().await?;
+    let blocked_keys = repository
+        .conflicts()
+        .await?
+        .into_iter()
+        .map(|conflict| format!("{}:{}", conflict.record_type, conflict.local_id))
+        .collect::<HashSet<_>>();
     let tombstones = repository.tombstones().await?;
     let checklists = dirty
         .iter()
         .filter(|record| record.record_type == "checklist")
+        .filter(|record| !blocked_keys.contains(&format!("checklist:{}", record.local_id)))
         .filter_map(|record| {
             snapshot
                 .checklists
@@ -187,10 +240,13 @@ pub async fn run_sync(
     let items = dirty
         .iter()
         .filter(|record| record.record_type == "item")
+        .filter(|record| !blocked_keys.contains(&format!("item:{}", record.local_id)))
         .filter_map(|record| find_todo(snapshot, &record.local_id))
         .map(|(list_id, index, item)| remote_todo(list_id, index, item, &session.user_id))
         .collect::<Vec<_>>();
-    let settings = if dirty.iter().any(|record| record.record_type == "settings") {
+    let settings = if dirty.iter().any(|record| record.record_type == "settings")
+        && !blocked_keys.contains("settings:language")
+    {
         Some(RemoteSettings {
             owner_user_id: Some(session.user_id.clone()),
             language_mode: snapshot.settings.language_mode.sync_value().to_owned(),
@@ -208,35 +264,58 @@ pub async fn run_sync(
         .map(|value| remote_attachment(value, &session.user_id))
         .collect::<Vec<_>>();
 
-    if checklists.is_empty()
-        && items.is_empty()
-        && attachments.is_empty()
-        && settings.is_none()
-        && tombstones.is_empty()
-        && cleaned_image_paths.is_empty()
-    {
-        return sync_view(repository, pulled.server_version, None).await;
-    }
-
     let payload_tombstones = tombstones
         .iter()
+        .filter(|item| !blocked_keys.contains(&format!("{}:{}", item.record_type, item.local_id)))
         .map(|item| remote_tombstone(item, &session.user_id))
         .collect::<Vec<_>>();
-    let pushed: RemotePushResult = cloud
+    let new_payload = MutationPayload {
+        checklists,
+        items,
+        attachments,
+        settings,
+        tombstones: payload_tombstones,
+        cleaned_image_paths,
+    };
+    let pending = repository.pending_mutation(&session.user_id).await?;
+    let (mutation_uuid, payload) = if let Some(stored) = pending {
+        (
+            stored.mutation_uuid,
+            serde_json::from_str::<MutationPayload>(&stored.payload_json)
+                .map_err(|error| AppError::Database(error.to_string()))?,
+        )
+    } else if mutation_payload_is_empty(&new_payload) {
+        return sync_view(repository, pulled.server_version, None).await;
+    } else {
+        let mutation_uuid = Uuid::new_v4().to_string();
+        repository
+            .save_pending_mutation(
+                &session.user_id,
+                &mutation_uuid,
+                pulled.server_version,
+                &serde_json::to_string(&new_payload)?,
+            )
+            .await?;
+        (mutation_uuid, new_payload)
+    };
+    let pushed: RemotePushResult = match cloud
         .rpc(
             session,
             "pixeldone_apply_mutation",
-            json!({
-                "p_mutation_uuid": Uuid::new_v4().to_string(),
-                "p_client_schema_version": EXPECTED_SCHEMA,
-                "p_checklists": checklists,
-                "p_items": items,
-                "p_attachments": attachments,
-                "p_settings": settings,
-                "p_tombstones": payload_tombstones,
-                "p_cleaned_image_paths": cleaned_image_paths,
-            }),
+            mutation_request(&mutation_uuid, &payload),
         )
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            repository
+                .mark_mutation_attempt(&session.user_id, &mutation_uuid, Some(&error.to_string()))
+                .await?;
+            return Err(error);
+        }
+    };
+    repository
+        .mark_mutation_attempt(&session.user_id, &mutation_uuid, None)
         .await?;
     require_schema(&pushed.schema_version)?;
 
@@ -246,14 +325,91 @@ pub async fn run_sync(
         .map(|value| format!("{}:{}", value.record_type, value.local_id))
         .collect::<HashSet<_>>();
     for accepted in &pushed.accepted.checklists {
-        apply_remote_checklist(snapshot, accepted);
-        repository
-            .clear_dirty("checklist", &accepted.local_id)
-            .await?;
+        let changed_after_send = payload
+            .checklists
+            .iter()
+            .find(|sent| sent.local_id == accepted.local_id)
+            .and_then(|sent| {
+                snapshot
+                    .checklists
+                    .iter()
+                    .find(|list| list.id == accepted.local_id)
+                    .map(|current| {
+                        let current = serde_json::to_value(remote_checklist(
+                            snapshot,
+                            current,
+                            &session.user_id,
+                        ))
+                        .expect("checklist sync payload must serialize");
+                        let sent = serde_json::to_value(sent)
+                            .expect("stored checklist payload must serialize");
+                        !semantic_differences("checklist", &current, &sent).is_empty()
+                    })
+            })
+            .unwrap_or(false);
+        if changed_after_send {
+            if let Some(local) = snapshot
+                .checklists
+                .iter_mut()
+                .find(|list| list.id == accepted.local_id)
+            {
+                local.remote_version = accepted.remote_version;
+            }
+            repository
+                .mark_dirty("checklist", &accepted.local_id)
+                .await?;
+        } else {
+            apply_remote_checklist(snapshot, accepted);
+            repository
+                .clear_dirty("checklist", &accepted.local_id)
+                .await?;
+        }
+        save_pristine(
+            repository,
+            &session.user_id,
+            "checklist",
+            &accepted.local_id,
+            accepted,
+        )
+        .await?;
     }
     for accepted in &pushed.accepted.items {
-        apply_remote_todo(snapshot, accepted)?;
-        repository.clear_dirty("item", &accepted.local_id).await?;
+        let changed_after_send = payload
+            .items
+            .iter()
+            .find(|sent| sent.local_id == accepted.local_id)
+            .and_then(|sent| {
+                find_todo(snapshot, &accepted.local_id).map(|(list_id, index, current)| {
+                    let current = serde_json::to_value(remote_todo(
+                        list_id,
+                        index,
+                        current,
+                        &session.user_id,
+                    ))
+                    .expect("todo sync payload must serialize");
+                    let sent =
+                        serde_json::to_value(sent).expect("stored todo payload must serialize");
+                    !semantic_differences("item", &current, &sent).is_empty()
+                })
+            })
+            .unwrap_or(false);
+        if changed_after_send {
+            if let Some((_, _, local)) = find_todo_mut(snapshot, &accepted.local_id) {
+                local.remote_version = accepted.remote_version;
+            }
+            repository.mark_dirty("item", &accepted.local_id).await?;
+        } else {
+            apply_remote_todo(snapshot, accepted)?;
+            repository.clear_dirty("item", &accepted.local_id).await?;
+        }
+        save_pristine(
+            repository,
+            &session.user_id,
+            "item",
+            &accepted.local_id,
+            accepted,
+        )
+        .await?;
     }
     apply_accepted_attachments(
         repository,
@@ -263,15 +419,34 @@ pub async fn run_sync(
     )
     .await?;
     if let Some(settings) = &pushed.settings {
-        snapshot.settings.language_mode = AppLanguage::from_sync_value(&settings.language_mode);
+        let changed_after_send = payload
+            .settings
+            .as_ref()
+            .is_some_and(|sent| snapshot.settings.language_mode.sync_value() != sent.language_mode);
         repository
             .set_language_remote_version(settings.remote_version)
             .await?;
-        repository.clear_dirty("settings", "language").await?;
+        if changed_after_send {
+            repository.mark_dirty("settings", "language").await?;
+        } else {
+            snapshot.settings.language_mode = AppLanguage::from_sync_value(&settings.language_mode);
+            repository.clear_dirty("settings", "language").await?;
+        }
+        save_pristine(
+            repository,
+            &session.user_id,
+            "settings",
+            "language",
+            settings,
+        )
+        .await?;
     }
     for accepted in &pushed.tombstones {
         repository
             .delete_tombstone(&accepted.record_type, &accepted.local_id)
+            .await?;
+        repository
+            .delete_pristine_record(&session.user_id, &accepted.record_type, &accepted.local_id)
             .await?;
         if accepted.record_type == "item" {
             delete_local_attachment(repository, attachments_dir, &accepted.local_id).await?;
@@ -294,7 +469,8 @@ pub async fn run_sync(
         drain_local_cleanup_queue(cloud, repository, session).await?;
         for conflict in &pushed.conflicts {
             if conflict.record_type != "attachment" {
-                save_push_conflict(repository, snapshot, conflict, &latest).await?;
+                save_push_conflict(repository, snapshot, &session.user_id, conflict, &latest)
+                    .await?;
             }
         }
     }
@@ -322,33 +498,43 @@ pub async fn run_sync(
     }
     repository.save_snapshot(snapshot).await?;
     repository
+        .delete_pending_mutation(&session.user_id, &mutation_uuid)
+        .await?;
+    repository
         .save_sync_cursor(&session.user_id, pushed.server_version)
         .await?;
     sync_view(repository, pushed.server_version, None).await
 }
 
 pub async fn conflicts(repository: &SqliteRepository) -> Result<Vec<SyncConflictView>, AppError> {
-    repository
-        .conflicts()
+    repository.delete_synthetic_checklist_conflicts().await?;
+    let snapshot = repository
+        .load_snapshot()
         .await?
-        .into_iter()
-        .map(|value| {
-            let local_payload =
-                serde_json::from_str(&value.local_payload_json).unwrap_or(Value::Null);
-            let cloud_payload =
-                serde_json::from_str(&value.remote_payload_json).unwrap_or(Value::Null);
-            let fields = serde_json::from_str(&value.fields_json).unwrap_or_default();
-            Ok(SyncConflictView {
-                record_type: value.record_type,
-                local_id: value.local_id,
-                title: payload_title(&local_payload),
-                fields,
-                local_payload,
-                cloud_payload,
-                message: value.message,
+        .unwrap_or_else(|| AppSnapshot::initial(unix_now_millis()));
+    let mut result = Vec::new();
+    for conflict in repository.conflicts().await? {
+        let local = serde_json::from_str(&conflict.local_payload_json).unwrap_or(Value::Null);
+        let cloud = serde_json::from_str(&conflict.remote_payload_json).unwrap_or(Value::Null);
+        let field_keys =
+            serde_json::from_str::<Vec<String>>(&conflict.fields_json).unwrap_or_default();
+        let fields = field_keys
+            .into_iter()
+            .map(|key| SyncConflictFieldView {
+                local_value: conflict_value(&key, &local, &snapshot),
+                cloud_value: conflict_value(&key, &cloud, &snapshot),
+                key,
             })
-        })
-        .collect()
+            .collect();
+        result.push(SyncConflictView {
+            record_type: conflict.record_type,
+            local_id: conflict.local_id,
+            title: conflict_title(&local, &cloud),
+            fields,
+            message_code: conflict.message,
+        });
+    }
+    Ok(result)
 }
 
 pub async fn resolve_conflict(
@@ -364,62 +550,49 @@ pub async fn resolve_conflict(
         .into_iter()
         .find(|value| value.record_type == record_type && value.local_id == local_id)
         .ok_or_else(|| AppError::NotFound(format!("conflict {record_type}:{local_id}")))?;
+    let local = serde_json::from_str::<Value>(&conflict.local_payload_json)
+        .map_err(|error| AppError::Database(error.to_string()))?;
+    let cloud = serde_json::from_str::<Value>(&conflict.remote_payload_json)
+        .map_err(|error| AppError::Database(error.to_string()))?;
+    let fields = serde_json::from_str::<Vec<String>>(&conflict.fields_json)
+        .map_err(|error| AppError::Database(error.to_string()))?;
+    let mut selected = local;
     if keep_cloud {
-        match record_type {
-            "checklist" => {
-                let remote: RemoteChecklist =
-                    serde_json::from_str(&conflict.remote_payload_json)
-                        .map_err(|error| AppError::Database(error.to_string()))?;
-                apply_remote_checklist(snapshot, &remote);
+        for field in &fields {
+            if let Some(object) = selected.as_object_mut() {
+                object.insert(
+                    field.clone(),
+                    cloud.get(field).cloned().unwrap_or(Value::Null),
+                );
             }
-            "item" => {
-                let remote: RemoteTodo = serde_json::from_str(&conflict.remote_payload_json)
-                    .map_err(|error| AppError::Database(error.to_string()))?;
-                apply_remote_todo(snapshot, &remote)?;
-            }
-            "settings" => {
-                let remote: RemoteSettings = serde_json::from_str(&conflict.remote_payload_json)
-                    .map_err(|error| AppError::Database(error.to_string()))?;
-                snapshot.settings.language_mode =
-                    AppLanguage::from_sync_value(&remote.language_mode);
-                repository
-                    .set_language_remote_version(remote.remote_version)
-                    .await?;
-            }
-            _ => return Err(AppError::Validation("未知冲突类型".to_owned())),
-        }
-        repository.clear_dirty(record_type, local_id).await?;
-    } else {
-        match record_type {
-            "checklist" => {
-                let remote: RemoteChecklist =
-                    serde_json::from_str(&conflict.remote_payload_json)
-                        .map_err(|error| AppError::Database(error.to_string()))?;
-                if let Some(local) = snapshot
-                    .checklists
-                    .iter_mut()
-                    .find(|list| list.id == local_id)
-                {
-                    local.remote_version = remote.remote_version;
-                }
-            }
-            "item" => {
-                let remote: RemoteTodo = serde_json::from_str(&conflict.remote_payload_json)
-                    .map_err(|error| AppError::Database(error.to_string()))?;
-                if let Some((_, _, local)) = find_todo_mut(snapshot, local_id) {
-                    local.remote_version = remote.remote_version;
-                }
-            }
-            "settings" => {
-                let remote: RemoteSettings = serde_json::from_str(&conflict.remote_payload_json)
-                    .map_err(|error| AppError::Database(error.to_string()))?;
-                repository
-                    .set_language_remote_version(remote.remote_version)
-                    .await?;
-            }
-            _ => return Err(AppError::Validation("未知冲突类型".to_owned())),
         }
     }
+    if let Some(object) = selected.as_object_mut() {
+        object.insert(
+            "remote_version".to_owned(),
+            cloud.get("remote_version").cloned().unwrap_or(Value::Null),
+        );
+    }
+    let cloud_version = cloud.get("remote_version").and_then(Value::as_i64);
+    apply_merged_record(repository, snapshot, record_type, &selected, cloud_version).await?;
+    if semantic_differences(record_type, &selected, &cloud).is_empty() {
+        repository.clear_dirty(record_type, local_id).await?;
+    } else {
+        repository.mark_dirty(record_type, local_id).await?;
+    }
+    let owner = cloud
+        .get("owner_user_id")
+        .and_then(Value::as_str)
+        .unwrap_or("current");
+    save_pristine_value(
+        repository,
+        owner,
+        record_type,
+        local_id,
+        &cloud,
+        cloud_version,
+    )
+    .await?;
     repository.delete_conflict(record_type, local_id).await?;
     repository.save_snapshot(snapshot).await
 }
@@ -427,97 +600,304 @@ pub async fn resolve_conflict(
 async fn apply_remote_changes(
     repository: &SqliteRepository,
     snapshot: &mut AppSnapshot,
+    owner: &str,
     batch: &RemoteChangeBatch,
     dirty: &HashSet<String>,
+    blocked: &HashSet<String>,
 ) -> Result<(), AppError> {
     for remote in &batch.checklists {
+        if is_synthetic_checklist_id(&remote.local_id) {
+            continue;
+        }
         let key = format!("checklist:{}", remote.local_id);
-        let local = snapshot
+        if blocked.contains(&key) {
+            continue;
+        }
+        let local_value = snapshot
             .checklists
             .iter()
-            .find(|list| list.id == remote.local_id);
-        if dirty.contains(&key)
-            && local.and_then(|value| value.remote_version) != remote.remote_version
-        {
-            save_conflict(
-                repository,
-                "checklist",
-                &remote.local_id,
-                local
-                    .map(serde_json::to_value)
-                    .transpose()?
-                    .unwrap_or(Value::Null),
-                serde_json::to_value(remote)?,
-                "remote_version_changed",
-                remote.remote_version,
-            )
-            .await?;
-        } else {
+            .find(|list| list.id == remote.local_id)
+            .map(|list| serde_json::to_value(remote_checklist(snapshot, list, owner)))
+            .transpose()?
+            .unwrap_or(Value::Null);
+        let remote_value = serde_json::to_value(remote)?;
+        if !dirty.contains(&key) || local_value.is_null() {
             apply_remote_checklist(snapshot, remote);
             repository
                 .clear_dirty("checklist", &remote.local_id)
                 .await?;
+            save_pristine(repository, owner, "checklist", &remote.local_id, remote).await?;
+            continue;
         }
+        merge_remote_record(
+            repository,
+            snapshot,
+            owner,
+            "checklist",
+            &remote.local_id,
+            local_value,
+            remote_value,
+        )
+        .await?;
     }
     for remote in &batch.items {
         let key = format!("item:{}", remote.local_id);
-        let local = find_todo(snapshot, &remote.local_id).map(|(_, _, item)| item);
-        if dirty.contains(&key)
-            && local.and_then(|value| value.remote_version) != remote.remote_version
-        {
-            save_conflict(
-                repository,
-                "item",
-                &remote.local_id,
-                local
-                    .map(serde_json::to_value)
-                    .transpose()?
-                    .unwrap_or(Value::Null),
-                serde_json::to_value(remote)?,
-                "remote_version_changed",
-                remote.remote_version,
-            )
-            .await?;
-        } else {
+        if blocked.contains(&key) {
+            continue;
+        }
+        let local_value = find_todo(snapshot, &remote.local_id)
+            .map(|(list_id, index, item)| {
+                serde_json::to_value(remote_todo(list_id, index, item, owner))
+            })
+            .transpose()?
+            .unwrap_or(Value::Null);
+        let remote_value = serde_json::to_value(remote)?;
+        if !dirty.contains(&key) || local_value.is_null() {
             apply_remote_todo(snapshot, remote)?;
             repository.clear_dirty("item", &remote.local_id).await?;
+            save_pristine(repository, owner, "item", &remote.local_id, remote).await?;
+            continue;
         }
+        merge_remote_record(
+            repository,
+            snapshot,
+            owner,
+            "item",
+            &remote.local_id,
+            local_value,
+            remote_value,
+        )
+        .await?;
     }
     if let Some(remote) = &batch.settings {
         let key = "settings:language";
+        if blocked.contains(key) {
+            return Ok(());
+        }
         let local_version = repository.language_remote_version().await?;
-        if dirty.contains(key) && local_version != remote.remote_version {
-            save_conflict(
-                repository,
-                "settings",
-                "language",
-                json!({
-                    "language_mode": snapshot.settings.language_mode.sync_value(),
-                    "remote_version": local_version,
-                }),
-                serde_json::to_value(remote)?,
-                "remote_version_changed",
-                remote.remote_version,
-            )
-            .await?;
-        } else {
+        let local_value = serde_json::to_value(RemoteSettings {
+            owner_user_id: Some(owner.to_owned()),
+            language_mode: snapshot.settings.language_mode.sync_value().to_owned(),
+            updated_at_millis: remote.updated_at_millis,
+            remote_version: local_version,
+        })?;
+        if !dirty.contains(key) {
             snapshot.settings.language_mode = AppLanguage::from_sync_value(&remote.language_mode);
             repository
                 .set_language_remote_version(remote.remote_version)
                 .await?;
             repository.clear_dirty("settings", "language").await?;
+            save_pristine(repository, owner, "settings", "language", remote).await?;
+        } else {
+            merge_remote_record(
+                repository,
+                snapshot,
+                owner,
+                "settings",
+                "language",
+                local_value,
+                serde_json::to_value(remote)?,
+            )
+            .await?;
         }
     }
     Ok(())
 }
 
+struct MergeDecision {
+    merged: Value,
+    conflict_fields: Vec<String>,
+    needs_push: bool,
+}
+
+async fn merge_remote_record(
+    repository: &SqliteRepository,
+    snapshot: &mut AppSnapshot,
+    owner: &str,
+    record_type: &str,
+    local_id: &str,
+    local: Value,
+    cloud: Value,
+) -> Result<(), AppError> {
+    let cloud_version = cloud.get("remote_version").and_then(Value::as_i64);
+    let pristine = repository
+        .pristine_record(owner, record_type, local_id)
+        .await?;
+    let decision = if let Some(pristine) = pristine {
+        let base = serde_json::from_str::<Value>(&pristine.payload_json)
+            .map_err(|error| AppError::Database(error.to_string()))?;
+        three_way_merge(record_type, &base, &local, &cloud)
+    } else {
+        let local_version = local.get("remote_version").and_then(Value::as_i64);
+        let fields = semantic_differences(record_type, &local, &cloud);
+        if local_version == cloud_version {
+            MergeDecision {
+                merged: local.clone(),
+                conflict_fields: Vec::new(),
+                needs_push: !fields.is_empty(),
+            }
+        } else if fields.is_empty() {
+            MergeDecision {
+                merged: cloud.clone(),
+                conflict_fields: Vec::new(),
+                needs_push: false,
+            }
+        } else {
+            MergeDecision {
+                merged: local.clone(),
+                conflict_fields: fields,
+                needs_push: true,
+            }
+        }
+    };
+
+    apply_merged_record(
+        repository,
+        snapshot,
+        record_type,
+        &decision.merged,
+        cloud_version,
+    )
+    .await?;
+    save_pristine_value(
+        repository,
+        owner,
+        record_type,
+        local_id,
+        &cloud,
+        cloud_version,
+    )
+    .await?;
+
+    if decision.conflict_fields.is_empty() {
+        repository.delete_conflict(record_type, local_id).await?;
+        if decision.needs_push {
+            repository.mark_dirty(record_type, local_id).await?;
+        } else {
+            repository.clear_dirty(record_type, local_id).await?;
+        }
+    } else {
+        repository.mark_dirty(record_type, local_id).await?;
+        save_conflict_with_fields(
+            repository,
+            record_type,
+            local_id,
+            decision.merged,
+            cloud,
+            "overlapping_fields_changed",
+            cloud_version,
+            &decision.conflict_fields,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn apply_merged_record(
+    repository: &SqliteRepository,
+    snapshot: &mut AppSnapshot,
+    record_type: &str,
+    value: &Value,
+    cloud_version: Option<i64>,
+) -> Result<(), AppError> {
+    match record_type {
+        "checklist" => {
+            let remote: RemoteChecklist = serde_json::from_value(value.clone())?;
+            apply_remote_checklist(snapshot, &remote);
+        }
+        "item" => {
+            let remote: RemoteTodo = serde_json::from_value(value.clone())?;
+            apply_remote_todo(snapshot, &remote)?;
+        }
+        "settings" => {
+            let remote: RemoteSettings = serde_json::from_value(value.clone())?;
+            snapshot.settings.language_mode = AppLanguage::from_sync_value(&remote.language_mode);
+            repository
+                .set_language_remote_version(cloud_version)
+                .await?;
+        }
+        _ => {
+            return Err(AppError::Validation(format!(
+                "Unknown sync record type {record_type}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn three_way_merge(record_type: &str, base: &Value, local: &Value, cloud: &Value) -> MergeDecision {
+    let mut merged = cloud.clone();
+    let mut conflict_fields = Vec::new();
+    let mut needs_push = false;
+    for field in sync_fields(record_type) {
+        let local_changed = base.get(*field) != local.get(*field);
+        let cloud_changed = base.get(*field) != cloud.get(*field);
+        if local_changed && local.get(*field) != cloud.get(*field) {
+            needs_push = true;
+            if let Some(object) = merged.as_object_mut() {
+                object.insert(
+                    (*field).to_owned(),
+                    local.get(*field).cloned().unwrap_or(Value::Null),
+                );
+            }
+        }
+        if local_changed && cloud_changed && local.get(*field) != cloud.get(*field) {
+            conflict_fields.push((*field).to_owned());
+        }
+    }
+    MergeDecision {
+        merged,
+        conflict_fields,
+        needs_push,
+    }
+}
+
+fn semantic_differences(record_type: &str, local: &Value, cloud: &Value) -> Vec<String> {
+    sync_fields(record_type)
+        .iter()
+        .filter(|field| local.get(**field) != cloud.get(**field))
+        .map(|field| (*field).to_owned())
+        .collect()
+}
+
+fn sync_fields(record_type: &str) -> &'static [&'static str] {
+    match record_type {
+        "checklist" => &["sort_index", "name"],
+        "item" => &[
+            "checklist_local_id",
+            "sort_index",
+            "title",
+            "priority",
+            "due_at_millis",
+            "completed",
+            "reminder_repeat",
+            "trashed_from_checklist_id",
+            "trashed_from_checklist_name",
+            "trashed_at_millis",
+        ],
+        "settings" => &["language_mode"],
+        _ => &[],
+    }
+}
+
+fn is_synthetic_checklist_id(local_id: &str) -> bool {
+    matches!(local_id, TRASH_CHECKLIST_ID | SETTINGS_CHECKLIST_ID)
+}
+
 async fn apply_tombstones(
     repository: &SqliteRepository,
     snapshot: &mut AppSnapshot,
+    owner: &str,
     tombstones: &[RemoteTombstone],
     attachments_dir: &Path,
 ) -> Result<(), AppError> {
     for tombstone in tombstones {
+        if tombstone.record_type == "checklist" && is_synthetic_checklist_id(&tombstone.local_id) {
+            repository
+                .clear_dirty(&tombstone.record_type, &tombstone.local_id)
+                .await?;
+            continue;
+        }
         match tombstone.record_type.as_str() {
             "checklist" => {
                 let todo_ids = snapshot
@@ -548,6 +928,9 @@ async fn apply_tombstones(
         }
         repository
             .clear_dirty(&tombstone.record_type, &tombstone.local_id)
+            .await?;
+        repository
+            .delete_pristine_record(owner, &tombstone.record_type, &tombstone.local_id)
             .await?;
     }
     *snapshot = snapshot.clone().normalized();
@@ -915,6 +1298,7 @@ fn apply_remote_todo(snapshot: &mut AppSnapshot, remote: &RemoteTodo) -> Result<
 async fn save_push_conflict(
     repository: &SqliteRepository,
     snapshot: &AppSnapshot,
+    owner: &str,
     conflict: &RemoteConflict,
     latest: &RemoteChangeBatch,
 ) -> Result<(), AppError> {
@@ -924,7 +1308,7 @@ async fn save_push_conflict(
                 .checklists
                 .iter()
                 .find(|value| value.id == conflict.local_id)
-                .map(serde_json::to_value)
+                .map(|value| serde_json::to_value(remote_checklist(snapshot, value, owner)))
                 .transpose()?
                 .unwrap_or(Value::Null),
             latest
@@ -942,7 +1326,9 @@ async fn save_push_conflict(
         ),
         "item" => (
             find_todo(snapshot, &conflict.local_id)
-                .map(|(_, _, value)| serde_json::to_value(value))
+                .map(|(list_id, index, value)| {
+                    serde_json::to_value(remote_todo(list_id, index, value, owner))
+                })
                 .transpose()?
                 .unwrap_or(Value::Null),
             latest
@@ -973,6 +1359,17 @@ async fn save_push_conflict(
         ),
         _ => (Value::Null, Value::Null, None),
     };
+    if !remote.is_null() {
+        save_pristine_value(
+            repository,
+            owner,
+            &conflict.record_type,
+            &conflict.local_id,
+            &remote,
+            version,
+        )
+        .await?;
+    }
     save_conflict(
         repository,
         &conflict.record_type,
@@ -994,18 +1391,103 @@ async fn save_conflict(
     message: &str,
     remote_version: Option<i64>,
 ) -> Result<(), AppError> {
-    let fields = differing_fields(&local, &remote);
+    let fields = semantic_differences(record_type, &local, &remote);
+    save_conflict_with_fields(
+        repository,
+        record_type,
+        local_id,
+        local,
+        remote,
+        message,
+        remote_version,
+        &fields,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn save_conflict_with_fields(
+    repository: &SqliteRepository,
+    record_type: &str,
+    local_id: &str,
+    local: Value,
+    remote: Value,
+    message: &str,
+    remote_version: Option<i64>,
+    fields: &[String],
+) -> Result<(), AppError> {
     repository
         .save_conflict(&StoredConflict {
             record_type: record_type.to_owned(),
             local_id: local_id.to_owned(),
             local_payload_json: serde_json::to_string(&local)?,
             remote_payload_json: serde_json::to_string(&remote)?,
-            fields_json: serde_json::to_string(&fields)?,
+            fields_json: serde_json::to_string(fields)?,
             message: message.to_owned(),
             remote_version,
         })
         .await
+}
+
+async fn save_pristine<T: Serialize>(
+    repository: &SqliteRepository,
+    owner: &str,
+    record_type: &str,
+    local_id: &str,
+    value: &T,
+) -> Result<(), AppError> {
+    let json = serde_json::to_value(value)?;
+    let remote_version = json.get("remote_version").and_then(Value::as_i64);
+    save_pristine_value(
+        repository,
+        owner,
+        record_type,
+        local_id,
+        &json,
+        remote_version,
+    )
+    .await
+}
+
+async fn save_pristine_value(
+    repository: &SqliteRepository,
+    owner: &str,
+    record_type: &str,
+    local_id: &str,
+    value: &Value,
+    remote_version: Option<i64>,
+) -> Result<(), AppError> {
+    repository
+        .save_pristine_record(
+            owner,
+            record_type,
+            local_id,
+            &serde_json::to_string(value)?,
+            remote_version,
+        )
+        .await
+}
+
+fn mutation_payload_is_empty(payload: &MutationPayload) -> bool {
+    payload.checklists.is_empty()
+        && payload.items.is_empty()
+        && payload.attachments.is_empty()
+        && payload.settings.is_none()
+        && payload.tombstones.is_empty()
+        && payload.cleaned_image_paths.is_empty()
+}
+
+fn mutation_request(mutation_uuid: &str, payload: &MutationPayload) -> Value {
+    json!({
+        "p_mutation_uuid": mutation_uuid,
+        "p_client_schema_version": EXPECTED_SCHEMA,
+        "p_checklists": payload.checklists,
+        "p_items": payload.items,
+        "p_attachments": payload.attachments,
+        "p_settings": payload.settings,
+        "p_tombstones": payload.tombstones,
+        "p_cleaned_image_paths": payload.cleaned_image_paths,
+    })
 }
 
 async fn sync_view(
@@ -1130,37 +1612,78 @@ fn find_todo_mut<'a>(
     })
 }
 
-fn differing_fields(local: &Value, remote: &Value) -> Vec<String> {
-    let ignored = ["id", "owner_user_id", "remote_version", "imageFileName"];
-    let keys = local
-        .as_object()
+fn conflict_title(local: &Value, cloud: &Value) -> String {
+    [local, cloud]
         .into_iter()
-        .flat_map(|value| value.keys())
-        .chain(
-            remote
-                .as_object()
-                .into_iter()
-                .flat_map(|value| value.keys()),
-        )
-        .filter(|key| !ignored.contains(&key.as_str()))
-        .collect::<HashSet<_>>();
-    let mut result = keys
-        .into_iter()
-        .filter(|key| local.get(*key) != remote.get(*key))
-        .cloned()
-        .collect::<Vec<_>>();
-    result.sort();
-    result
+        .find_map(|value| {
+            value
+                .get("title")
+                .or_else(|| value.get("name"))
+                .and_then(Value::as_str)
+                .filter(|text| !text.trim().is_empty())
+        })
+        .unwrap_or("language")
+        .to_owned()
 }
 
-fn payload_title(value: &Value) -> String {
-    value
-        .get("title")
-        .or_else(|| value.get("name"))
-        .or_else(|| value.get("language_mode"))
-        .and_then(Value::as_str)
-        .unwrap_or("SYNC CONFLICT")
-        .to_owned()
+fn conflict_value(key: &str, payload: &Value, snapshot: &AppSnapshot) -> SyncConflictValueView {
+    let value = payload.get(key).cloned().unwrap_or(Value::Null);
+    if value.is_null() {
+        return SyncConflictValueView {
+            kind: "empty".to_owned(),
+            value,
+            label: None,
+        };
+    }
+    let (kind, display_value, label) = match key {
+        "sort_index" => (
+            "position",
+            value
+                .as_i64()
+                .map(|position| Value::from(position + 1))
+                .unwrap_or(value),
+            None,
+        ),
+        "checklist_local_id" | "trashed_from_checklist_id" => {
+            let id = value.as_str().unwrap_or_default();
+            let label = snapshot
+                .checklists
+                .iter()
+                .find(|list| list.id == id)
+                .map(|list| list.name.clone());
+            ("checklist", Value::String(id.to_owned()), label)
+        }
+        "completed" => (
+            "status",
+            Value::String(
+                if value.as_bool().unwrap_or(false) {
+                    "completed"
+                } else {
+                    "active"
+                }
+                .to_owned(),
+            ),
+            None,
+        ),
+        "priority" => (
+            "priority",
+            Value::String(value.as_str().unwrap_or_default().to_ascii_lowercase()),
+            None,
+        ),
+        "reminder_repeat" => (
+            "repeat",
+            Value::String(value.as_str().unwrap_or_default().to_ascii_lowercase()),
+            None,
+        ),
+        "language_mode" => ("language", value, None),
+        "due_at_millis" | "trashed_at_millis" => ("timestamp", value, None),
+        _ => ("text", value, None),
+    };
+    SyncConflictValueView {
+        kind: kind.to_owned(),
+        value: display_value,
+        label,
+    }
 }
 
 fn require_schema(value: &str) -> Result<(), AppError> {
@@ -1220,6 +1743,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn independent_local_and_cloud_fields_merge_without_conflict() {
+        let base = json!({ "title": "Base", "priority": "LOW", "completed": false });
+        let local = json!({ "title": "Local", "priority": "LOW", "completed": false });
+        let cloud = json!({ "title": "Base", "priority": "HIGH", "completed": false });
+
+        let decision = three_way_merge("item", &base, &local, &cloud);
+
+        assert!(decision.conflict_fields.is_empty());
+        assert!(decision.needs_push);
+        assert_eq!(decision.merged["title"], "Local");
+        assert_eq!(decision.merged["priority"], "HIGH");
+    }
+
+    #[test]
+    fn different_edits_to_the_same_field_require_review() {
+        let base = json!({ "title": "Base" });
+        let local = json!({ "title": "Local" });
+        let cloud = json!({ "title": "Cloud" });
+
+        let decision = three_way_merge("item", &base, &local, &cloud);
+
+        assert_eq!(decision.conflict_fields, ["title"]);
+        assert_eq!(decision.merged["title"], "Local");
+    }
+
+    #[test]
+    fn identical_edits_do_not_require_review_or_another_push() {
+        let base = json!({ "name": "Base", "sort_index": 0 });
+        let local = json!({ "name": "Renamed", "sort_index": 0 });
+        let cloud = json!({ "name": "Renamed", "sort_index": 0 });
+
+        let decision = three_way_merge("checklist", &base, &local, &cloud);
+
+        assert!(decision.conflict_fields.is_empty());
+        assert!(!decision.needs_push);
+    }
+
+    #[test]
+    fn synthetic_checklists_never_enter_cloud_sync() {
+        assert!(is_synthetic_checklist_id(TRASH_CHECKLIST_ID));
+        assert!(is_synthetic_checklist_id(SETTINGS_CHECKLIST_ID));
+        assert!(!is_synthetic_checklist_id("main"));
+    }
+
+    #[test]
+    fn mutation_request_preserves_the_durable_uuid() {
+        let request = mutation_request("fixed-mutation-id", &MutationPayload::default());
+
+        assert_eq!(request["p_mutation_uuid"], "fixed-mutation-id");
+        assert_eq!(request["p_client_schema_version"], EXPECTED_SCHEMA);
+    }
+
+    #[test]
     fn cloud_todo_payload_never_contains_local_image_metadata() {
         let item = TodoItem {
             id: "todo".to_owned(),
@@ -1241,5 +1817,13 @@ mod tests {
         assert!(json.get("image_local_name").is_none());
         assert!(json.get("image_remote_path").is_none());
         assert!(json.get("image_sync_state").is_none());
+        for field in sync_fields("item") {
+            assert!(
+                json.get(*field).is_some(),
+                "cloud conflict payload must contain {field}"
+            );
+        }
+        assert!(json.get("dueAtMillis").is_none());
+        assert!(json.get("reminderRepeat").is_none());
     }
 }

@@ -43,7 +43,9 @@ const english = {
   currentPassword: 'Current password',
   newPassword: 'New password',
   confirmPassword: 'Confirm new password',
-  changingPassword: 'Changing password…'
+  changingPassword: 'Changing password…',
+  thisDevice: 'This device', cloudVersion: 'Cloud version', useThisDevice: 'Use this device', useCloudVersion: 'Use cloud version',
+  conflictPosition: 'Position {value}', statusActive: 'Active', statusCompleted: 'Completed', emptyValue: 'None'
 } as const;
 
 export type WindowsMessageKey = keyof typeof english;
@@ -62,7 +64,9 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     notificationIssue: '通知需要处理', alarmRinging: 'XHIGH 闹钟响铃中', openSettings: '打开设置', editChecklist: '编辑清单',
     saveChecklist: '保存清单', cancelChecklist: '取消编辑清单', todoCount: '项待办', syncDetail: '同步',
     signInToSyncAndroid: '登录后可与 Android 同步。', addChecklist: '添加清单',
-    changePassword: '修改密码', currentPassword: '当前密码', newPassword: '新密码', confirmPassword: '确认新密码', changingPassword: '正在修改密码…'
+    changePassword: '修改密码', currentPassword: '当前密码', newPassword: '新密码', confirmPassword: '确认新密码', changingPassword: '正在修改密码…',
+    thisDevice: '此设备', cloudVersion: '云端版本', useThisDevice: '使用此设备版本', useCloudVersion: '使用云端版本',
+    conflictPosition: '清单位置 {value}', statusActive: '未完成', statusCompleted: '已完成', emptyValue: '无'
   },
   ar: {
     productKind: 'أداة بكسل', maker: 'CODEX & XUE', checklists: 'قوائم المهام', active: 'نشطة', done: 'مكتملة',
@@ -76,7 +80,9 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     notificationIssue: 'تحتاج الإشعارات إلى الانتباه', alarmRinging: 'منبّه XHIGH يرن', openSettings: 'فتح الإعدادات', editChecklist: 'تحرير القائمة',
     saveChecklist: 'حفظ القائمة', cancelChecklist: 'إلغاء تحرير القائمة', todoCount: 'مهام', syncDetail: 'المزامنة',
     signInToSyncAndroid: 'سجّل الدخول للمزامنة مع Android.', addChecklist: 'إضافة قائمة',
-    changePassword: 'تغيير كلمة المرور', currentPassword: 'كلمة المرور الحالية', newPassword: 'كلمة المرور الجديدة', confirmPassword: 'تأكيد كلمة المرور الجديدة', changingPassword: 'جارٍ تغيير كلمة المرور…'
+    changePassword: 'تغيير كلمة المرور', currentPassword: 'كلمة المرور الحالية', newPassword: 'كلمة المرور الجديدة', confirmPassword: 'تأكيد كلمة المرور الجديدة', changingPassword: 'جارٍ تغيير كلمة المرور…',
+    thisDevice: 'هذا الجهاز', cloudVersion: 'إصدار السحابة', useThisDevice: 'استخدام إصدار هذا الجهاز', useCloudVersion: 'استخدام إصدار السحابة',
+    conflictPosition: 'الموضع {value}', statusActive: 'نشطة', statusCompleted: 'مكتملة', emptyValue: 'لا شيء'
   },
   fr: {
     productKind: 'OUTIL PIXEL', maker: 'CODEX & XUE', checklists: 'LISTES', active: 'ACTIVES', done: 'TERMINÉES',
@@ -90,7 +96,9 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     notificationIssue: 'NOTIFICATION À VÉRIFIER', alarmRinging: 'ALARME XHIGH EN COURS', openSettings: 'Ouvrir les réglages', editChecklist: 'Modifier la liste',
     saveChecklist: 'Enregistrer la liste', cancelChecklist: 'Annuler la modification', todoCount: 'tâches', syncDetail: 'SYNCHRO',
     signInToSyncAndroid: 'Connectez-vous pour synchroniser avec Android.', addChecklist: 'Ajouter une liste',
-    changePassword: 'Modifier le mot de passe', currentPassword: 'Mot de passe actuel', newPassword: 'Nouveau mot de passe', confirmPassword: 'Confirmer le nouveau mot de passe', changingPassword: 'Modification du mot de passe…'
+    changePassword: 'Modifier le mot de passe', currentPassword: 'Mot de passe actuel', newPassword: 'Nouveau mot de passe', confirmPassword: 'Confirmer le nouveau mot de passe', changingPassword: 'Modification du mot de passe…',
+    thisDevice: 'Cet appareil', cloudVersion: 'Version cloud', useThisDevice: 'Utiliser cet appareil', useCloudVersion: 'Utiliser la version cloud',
+    conflictPosition: 'Position {value}', statusActive: 'Active', statusCompleted: 'Terminée', emptyValue: 'Aucun'
   },
   ru: {
     productKind: 'ПИКСЕЛЬНЫЙ ИНСТРУМЕНТ', maker: 'CODEX & XUE', checklists: 'СПИСКИ', active: 'АКТИВНЫЕ', done: 'ГОТОВО',
@@ -104,7 +112,9 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     notificationIssue: 'ТРЕБУЕТСЯ НАСТРОЙКА УВЕДОМЛЕНИЙ', alarmRinging: 'ЗВОНИТ БУДИЛЬНИК XHIGH', openSettings: 'Открыть настройки', editChecklist: 'Изменить список',
     saveChecklist: 'Сохранить список', cancelChecklist: 'Отменить изменение', todoCount: 'задач', syncDetail: 'СИНХР.',
     signInToSyncAndroid: 'Войдите, чтобы синхронизироваться с Android.', addChecklist: 'Добавить список',
-    changePassword: 'Изменить пароль', currentPassword: 'Текущий пароль', newPassword: 'Новый пароль', confirmPassword: 'Подтвердите новый пароль', changingPassword: 'Изменение пароля…'
+    changePassword: 'Изменить пароль', currentPassword: 'Текущий пароль', newPassword: 'Новый пароль', confirmPassword: 'Подтвердите новый пароль', changingPassword: 'Изменение пароля…',
+    thisDevice: 'Это устройство', cloudVersion: 'Облачная версия', useThisDevice: 'Использовать версию устройства', useCloudVersion: 'Использовать облачную версию',
+    conflictPosition: 'Позиция {value}', statusActive: 'Активная', statusCompleted: 'Выполнена', emptyValue: 'Нет'
   },
   es: {
     productKind: 'UTILIDAD PÍXEL', maker: 'CODEX & XUE', checklists: 'LISTAS', active: 'ACTIVAS', done: 'HECHAS',
@@ -118,7 +128,9 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     notificationIssue: 'NOTIFICACIÓN REQUIERE ATENCIÓN', alarmRinging: 'ALARMA XHIGH SONANDO', openSettings: 'Abrir ajustes', editChecklist: 'Editar lista',
     saveChecklist: 'Guardar lista', cancelChecklist: 'Cancelar edición', todoCount: 'tareas', syncDetail: 'SINCRONIZAR',
     signInToSyncAndroid: 'Inicia sesión para sincronizar con Android.', addChecklist: 'Añadir lista',
-    changePassword: 'Cambiar contraseña', currentPassword: 'Contraseña actual', newPassword: 'Nueva contraseña', confirmPassword: 'Confirmar nueva contraseña', changingPassword: 'Cambiando contraseña…'
+    changePassword: 'Cambiar contraseña', currentPassword: 'Contraseña actual', newPassword: 'Nueva contraseña', confirmPassword: 'Confirmar nueva contraseña', changingPassword: 'Cambiando contraseña…',
+    thisDevice: 'Este dispositivo', cloudVersion: 'Versión en la nube', useThisDevice: 'Usar este dispositivo', useCloudVersion: 'Usar la versión en la nube',
+    conflictPosition: 'Posición {value}', statusActive: 'Activa', statusCompleted: 'Completada', emptyValue: 'Ninguno'
   }
 };
 

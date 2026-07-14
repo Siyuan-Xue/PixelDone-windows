@@ -21,6 +21,8 @@
     MutationResult,
     SortMode,
     StorageInfo,
+    SyncConflictFieldView,
+    SyncConflictValueView,
     SyncConflictView,
     TodoDraft,
     TodoItem,
@@ -555,6 +557,48 @@
           : 'priority_low');
   }
 
+  function conflictTitle(conflict: SyncConflictView): string {
+    return conflict.recordType === 'settings'
+      ? `${t('options')} · ${t('settings_language')}`
+      : conflict.title;
+  }
+
+  function conflictFieldLabel(field: SyncConflictFieldView): string {
+    const keys: Record<string, MessageKey> = {
+      name: 'field_name', sort_index: 'field_sort', checklist_local_id: 'field_checklist',
+      title: 'field_title', priority: 'field_priority', due_at_millis: 'field_due',
+      completed: 'field_completed', reminder_repeat: 'field_repeat', language_mode: 'field_language',
+      trashed_from_checklist_id: 'field_trash', trashed_from_checklist_name: 'field_trash',
+      trashed_at_millis: 'field_trash'
+    };
+    return t(keys[field.key] ?? 'conflict');
+  }
+
+  function conflictValueText(value: SyncConflictValueView): string {
+    if (value.kind === 'empty') return wt('emptyValue');
+    if (value.kind === 'checklist') return value.label ?? String(value.value);
+    if (value.kind === 'position') return wt('conflictPosition').replace('{value}', String(value.value));
+    if (value.kind === 'status') return wt(value.value === 'completed' ? 'statusCompleted' : 'statusActive');
+    if (value.kind === 'priority') return priorityLabel(String(value.value).toUpperCase() as TodoPriority);
+    if (value.kind === 'repeat') {
+      const repeat = String(value.value).toUpperCase();
+      return t(repeat === 'NONE' ? 'repeat_none' : repeat === 'DAILY' ? 'repeat_daily' : 'repeat_weekly');
+    }
+    if (value.kind === 'language') {
+      const languageKeys: Record<string, MessageKey> = {
+        system: 'language_system', en: 'language_english', 'zh-Hans': 'language_chinese',
+        ar: 'language_arabic', fr: 'language_french', ru: 'language_russian', es: 'language_spanish'
+      };
+      return t(languageKeys[String(value.value)] ?? 'language_system');
+    }
+    if (value.kind === 'timestamp' && typeof value.value === 'number') {
+      return new Intl.DateTimeFormat(locale, {
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+      }).format(value.value);
+    }
+    return String(value.value);
+  }
+
   function checklistDisplayName(list: Checklist): string {
     if (list.kind === 'SETTINGS') return t('options');
     if (list.kind === 'TRASH') return t('field_trash');
@@ -713,26 +757,15 @@
               </article>
             {/each}
 
-            {#if selectedList.items.some((item) => item.completed)}
-              <section class="completed-group" aria-label={wt('completedTasks')}>
-                <header class="completed-group-header">
-                  <span><strong>{wt('completedTasks')}</strong> · {selectedList.items.filter((item) => item.completed).length}</span>
-                  <div class="completed-group-actions">
-                    <button class="quiet-button" onclick={() => void toggleHideDone()}>{snapshot.hideCompleted ? wt('showCompleted') : wt('hideCompleted')}</button>
-                    <button class="quiet-button" onclick={() => void cleanCompleted()}>{t('clean_done')}</button>
-                  </div>
-                </header>
-                {#if !snapshot.hideCompleted}
-                  {#each completedItems as item (item.id)}
-                    <article class:selected={item.id === selectedTodoId} class:highlighted={highlightedTodoId === item.id} class="task-row completed priority-{item.priority.toLowerCase()}">
-                      <button class="completion-control checked" aria-label={t('show')} onclick={() => void toggleTodo(item)}><Icon name="check" size={12} /></button>
-                      <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto">{item.title}</strong></button>
-                      {#if item.imageFileName}<button class="attachment-badge" onclick={() => void showImagePreview(item.id)}><Icon name="image" /></button>{/if}
-                      {#if snapshot.quickDelete}<button class="delete-slot" onclick={() => { selectedTodoId = item.id; void moveSelectedToTrash(); }}>{t('delete')}</button>{/if}
-                    </article>
-                  {/each}
-                {/if}
-              </section>
+            {#if !snapshot.hideCompleted}
+              {#each completedItems as item (item.id)}
+                <article class:selected={item.id === selectedTodoId} class:highlighted={highlightedTodoId === item.id} class="task-row completed priority-{item.priority.toLowerCase()}">
+                  <button class="completion-control checked" aria-label={t('show')} onclick={() => void toggleTodo(item)}><Icon name="check" size={12} /></button>
+                  <button class="task-open task-copy" onclick={(event) => chooseTodo(item, event.currentTarget)}><strong dir="auto">{item.title}</strong></button>
+                  {#if item.imageFileName}<button class="attachment-badge" onclick={() => void showImagePreview(item.id)}><Icon name="image" /></button>{/if}
+                  {#if snapshot.quickDelete}<button class="delete-slot" onclick={() => { selectedTodoId = item.id; void moveSelectedToTrash(); }}>{t('delete')}</button>{/if}
+                </article>
+              {/each}
             {/if}
           {/if}
           </div>
@@ -867,7 +900,24 @@
   {/if}
 
   {#if conflictOpen}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && (conflictOpen = false)}><section class="conflict-modal" role="dialog" aria-modal="true" tabindex="-1"><header><h2>{t('sync_conflicts')}</h2><button class="icon-button" onclick={() => (conflictOpen = false)}><Icon name="close" /></button></header>{#if conflicts.length === 0}<p>{t('no_conflicts')}</p>{/if}{#each conflicts as conflict}<article class="conflict-card"><h3>{conflict.title}</h3><p>{conflict.fields.join(', ')}</p><div class="conflict-columns"><pre>{JSON.stringify(conflict.localPayload, null, 2)}</pre><pre>{JSON.stringify(conflict.cloudPayload, null, 2)}</pre></div><div class="form-actions"><button class="quiet-button" onclick={() => void resolveConflict(conflict, 'KEEP_LOCAL')}>{t('keep_local')}</button><button class="primary-button" onclick={() => void resolveConflict(conflict, 'KEEP_CLOUD')}>{t('keep_cloud')}</button></div></article>{/each}</section></div>
+    <div class="modal-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && (conflictOpen = false)}>
+      <section class="conflict-modal" role="dialog" aria-modal="true" tabindex="-1">
+        <header><h2>{t('sync_conflicts')}</h2><button class="icon-button" onclick={() => (conflictOpen = false)}><Icon name="close" /></button></header>
+        {#if conflicts.length === 0}<p>{t('no_conflicts')}</p>{/if}
+        {#each conflicts as conflict}
+          <article class="conflict-card">
+            <h3>{conflictTitle(conflict)}</h3>
+            <div class="conflict-table">
+              <div class="conflict-table-head"><span></span><strong>{wt('thisDevice')}</strong><strong>{wt('cloudVersion')}</strong></div>
+              {#each conflict.fields as field}
+                <div class="conflict-field-row"><strong>{conflictFieldLabel(field)}</strong><span>{conflictValueText(field.localValue)}</span><span>{conflictValueText(field.cloudValue)}</span></div>
+              {/each}
+            </div>
+            <div class="form-actions"><button class="quiet-button" onclick={() => void resolveConflict(conflict, 'KEEP_LOCAL')}>{wt('useThisDevice')}</button><button class="primary-button" onclick={() => void resolveConflict(conflict, 'KEEP_CLOUD')}>{wt('useCloudVersion')}</button></div>
+          </article>
+        {/each}
+      </section>
+    </div>
   {/if}
 
   {#if previewData}

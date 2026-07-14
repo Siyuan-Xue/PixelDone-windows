@@ -1,5 +1,5 @@
 use pixeldone_windows_lib::{
-    domain::AppSnapshot,
+    domain::{AppSnapshot, DEFAULT_CHECKLIST_ID, ReminderRepeat, TodoItem, TodoPriority},
     infrastructure::{db::LocalTodoAttachment, repository::SqliteRepository},
 };
 
@@ -55,6 +55,109 @@ fn migrations_persist_and_reload_the_initial_snapshot() {
                 .as_deref(),
             Some("migration-image.png")
         );
+        repository.close().await;
+        let _ = std::fs::remove_file(database_path);
+    });
+}
+
+#[test]
+fn migration_nine_persists_pristine_and_mutation_state() {
+    tauri::async_runtime::block_on(async {
+        let database_path = std::env::temp_dir().join(format!(
+            "pixeldone-migration-nine-{}.sqlite3",
+            std::process::id()
+        ));
+        let repository = SqliteRepository::open(&database_path)
+            .await
+            .expect("migration nine should apply");
+
+        assert!(!repository.pristine_initialized("owner").await.unwrap());
+        repository.mark_pristine_initialized("owner").await.unwrap();
+        repository
+            .save_pristine_record("owner", "item", "todo", r#"{"title":"base"}"#, Some(7))
+            .await
+            .unwrap();
+        repository
+            .save_pending_mutation("owner", "mutation-1", 7, r#"{"items":[]}"#)
+            .await
+            .unwrap();
+
+        assert!(repository.pristine_initialized("owner").await.unwrap());
+        assert_eq!(
+            repository
+                .pristine_record("owner", "item", "todo")
+                .await
+                .unwrap()
+                .unwrap()
+                .remote_version,
+            Some(7)
+        );
+        assert_eq!(
+            repository
+                .pending_mutation("owner")
+                .await
+                .unwrap()
+                .unwrap()
+                .mutation_uuid,
+            "mutation-1"
+        );
+
+        repository.close().await;
+        let _ = std::fs::remove_file(database_path);
+    });
+}
+
+#[test]
+fn editing_a_todo_does_not_dirty_its_parent_checklist() {
+    tauri::async_runtime::block_on(async {
+        let database_path = std::env::temp_dir().join(format!(
+            "pixeldone-item-dirty-{}.sqlite3",
+            std::process::id()
+        ));
+        let repository = SqliteRepository::open(&database_path).await.unwrap();
+        let mut before = AppSnapshot::initial(42);
+        before
+            .checklists
+            .iter_mut()
+            .find(|list| list.id == DEFAULT_CHECKLIST_ID)
+            .unwrap()
+            .items
+            .push(TodoItem {
+                id: "todo".to_owned(),
+                title: "Before".to_owned(),
+                priority: TodoPriority::Medium,
+                due_at_millis: 0,
+                completed: false,
+                created_at_millis: 42,
+                updated_at_millis: 42,
+                reminder_repeat: ReminderRepeat::None,
+                image_file_name: None,
+                trashed_from_checklist_id: None,
+                trashed_from_checklist_name: None,
+                trashed_at_millis: None,
+                remote_version: Some(1),
+            });
+        repository.save_snapshot(&before).await.unwrap();
+        let mut after = before.clone();
+        let todo = &mut after
+            .checklists
+            .iter_mut()
+            .find(|list| list.id == DEFAULT_CHECKLIST_ID)
+            .unwrap()
+            .items[0];
+        todo.title = "After".to_owned();
+        todo.updated_at_millis = 43;
+
+        repository
+            .save_snapshot_with_changes(&before, &after)
+            .await
+            .unwrap();
+        let dirty = repository.dirty_records().await.unwrap();
+
+        assert_eq!(dirty.len(), 1);
+        assert_eq!(dirty[0].record_type, "item");
+        assert_eq!(dirty[0].local_id, "todo");
+
         repository.close().await;
         let _ = std::fs::remove_file(database_path);
     });
