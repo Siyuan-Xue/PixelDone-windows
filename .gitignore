@@ -1,18 +1,86 @@
-.DS_Store
-node_modules
-/build
-/.svelte-kit
-/package
+# Bun, Node.js, SvelteKit, Vite, and test output
+/node_modules/
+/.bun/
+/build/
+/.svelte-kit/
+/package/
+/.vite/
+/coverage/
+/.nyc_output/
+/playwright-report/
+/test-results/
+/blob-report/
+/allure-results/
+*.tsbuildinfo
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Local environment configuration
 .env
 .env.*
 !.env.example
-vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
-src-tauri/target/
-src-tauri/tauri.signing.conf.json
+
+# Rust and Tauri generated output
+/src-tauri/target/
+/src-tauri/gen/schemas/
+/src-tauri/tauri.signing.conf.json
+
+# Signing material and credentials; public *.key.pub files remain trackable
 *.key
 *.password
 *.sig
+*.p12
+*.pfx
+*.pem
+*.jks
+*.keystore
+
+# Windows installers and packaged binaries
+*.exe
+*.msi
+*.msix
+*.appx
+*.appxbundle
+*.nupkg
+
+# Local application data and SQLite sidecars
+/attachments/
+/cache/
+/data/
+/logs/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Logs, crash dumps, and temporary files
+*.log
+*.dmp
+*.stackdump
+hs_err_pid*
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# IDE and operating-system state; shared .vscode files remain tracked
+/.idea/
+/.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Lockfiles from package managers not used by this Bun repository
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
