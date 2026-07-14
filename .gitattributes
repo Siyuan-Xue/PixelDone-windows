@@ -1,1 +1,2 @@
 src-tauri/migrations/*.sql text eol=crlf
+src-tauri/migrations/0007_attachment_sync.sql text eol=lf

@@ -2,13 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { loadManifest, summarize } from './parity';
 
 describe('parity manifest', () => {
-  test('targets Windows 3.2.1 while preserving the audited Android baseline', async () => {
+  test('targets Windows 3.2.2 while preserving the audited Android baseline', async () => {
     const manifest = await loadManifest();
     expect(manifest.windowsTarget).toEqual({
       product: 'PixelDone Windows',
-      version: '3.2.1',
+      version: '3.2.2',
       stage: 'formal_release',
-      evidence: ['parity/evidence/windows/candidate-3.2.1.md'],
+      evidence: ['parity/evidence/windows/candidate-3.2.2.md'],
       authorizedIncompleteRows: [
         'IMAGE-LOCAL-001',
         'AUTH-001',
@@ -32,7 +32,7 @@ describe('parity manifest', () => {
     }
     const installer = manifest.rows.find((candidate) => candidate.id === 'RELEASE-NSIS-001');
     expect(installer?.status).toBe('verified');
-    expect(installer?.evidence.windows).toContain('parity/evidence/windows/candidate-3.2.1.md');
+    expect(installer?.evidence.windows).toContain('parity/evidence/windows/candidate-3.2.2.md');
     const cloudImage = manifest.rows.find((candidate) => candidate.id === 'IMAGE-CLOUD-EXCLUDED');
     expect(cloudImage?.requiredForRelease).toBeTrue();
     expect(cloudImage?.status).toBe('in_progress');

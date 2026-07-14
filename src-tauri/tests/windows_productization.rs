@@ -1,11 +1,13 @@
 use std::fs;
 
+use sha2::{Digest, Sha384};
+
 #[test]
 fn formal_config_uses_professional_identity_and_protocol() {
     let config: serde_json::Value =
         serde_json::from_str(&fs::read_to_string("tauri.conf.json").unwrap()).unwrap();
     assert_eq!(config["productName"], "PixelDone");
-    assert_eq!(config["version"], "3.2.1");
+    assert_eq!(config["version"], "3.2.2");
     assert_eq!(config["mainBinaryName"], "PixelDone");
     assert_eq!(
         config["plugins"]["deep-link"]["desktop"]["schemes"][0],
@@ -78,6 +80,7 @@ fn runtime_preserves_only_the_current_installed_shortcut_target() {
 fn sqlite_migrations_use_the_deployed_windows_line_endings() {
     let attributes = fs::read_to_string("../.gitattributes").unwrap();
     assert!(attributes.contains("src-tauri/migrations/*.sql text eol=crlf"));
+    assert!(attributes.contains("src-tauri/migrations/0007_attachment_sync.sql text eol=lf"));
     for version in (1..=6).chain(std::iter::once(8)) {
         let prefix = format!("{version:04}_");
         let migration = fs::read_dir("migrations")
@@ -97,6 +100,23 @@ fn sqlite_migrations_use_the_deployed_windows_line_endings() {
             "migration {version} contains a bare LF"
         );
     }
+
+    let deployed_attachment_sync = fs::read("migrations/0007_attachment_sync.sql").unwrap();
+    assert!(
+        deployed_attachment_sync
+            .windows(2)
+            .any(|window| window == b"\n\n")
+    );
+    assert!(
+        !deployed_attachment_sync
+            .windows(2)
+            .any(|window| window == b"\r\n"),
+        "migration 7 must retain the LF checksum deployed by PixelDone 3.2.0"
+    );
+    assert_eq!(
+        format!("{:X}", Sha384::digest(&deployed_attachment_sync)),
+        "9606CFB487A71F9661010578B3E0D527A5A44B0B9D554650F1E6D524D086594560669F8548893FC6E85DECC900BE1CC6"
+    );
 }
 
 #[test]
