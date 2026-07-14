@@ -45,6 +45,62 @@ async function setCssViewport(width: number, height: number): Promise<{ innerWid
 }
 
 describe('PixelDone 3.1.3 desktop layout', () => {
+  it('keeps checklist counts at the trailing edge until hover or focus actions replace them', async () => {
+    const before = await browser.execute(() => {
+      const navRow = document.querySelector<HTMLElement>('.list-nav .nav-row');
+      const count = navRow?.querySelector<HTMLElement>('.nav-count');
+      const actions = navRow?.querySelector<HTMLElement>('.nav-actions');
+      if (!navRow || !count || !actions) return null;
+      let stylesheetText = '';
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          stylesheetText += Array.from(sheet.cssRules).map((rule) => rule.cssText).join('\n');
+        } catch {
+          // All production styles are local; ignore browser-owned sheets if one is inaccessible.
+        }
+      }
+      const rowRect = navRow.getBoundingClientRect();
+      const countRect = count.getBoundingClientRect();
+      const rtl = getComputedStyle(navRow).direction === 'rtl';
+      return {
+        trailingGap: Math.round(rtl ? countRect.left - rowRect.left : rowRect.right - countRect.right),
+        countEdge: Math.round(rtl ? countRect.left : countRect.right),
+        rtl,
+        countOpacity: getComputedStyle(count).opacity,
+        actionsOpacity: getComputedStyle(actions).opacity,
+        actionsPosition: getComputedStyle(actions).position,
+        hasHoverActionsRule: stylesheetText.includes('.nav-row:hover .nav-actions'),
+        hasHoverCountRule: stylesheetText.includes('.nav-row:hover .nav-count')
+      };
+    });
+
+    expect(before).not.toBeNull();
+    expect(before?.trailingGap).toBeLessThanOrEqual(12);
+    expect(before?.countOpacity).toBe('1');
+    expect(before?.actionsOpacity).toBe('0');
+    expect(before?.actionsPosition).toBe('absolute');
+    expect(before?.hasHoverActionsRule).toBe(true);
+    expect(before?.hasHoverCountRule).toBe(true);
+
+    await browser.execute(() => document.querySelector<HTMLElement>('.list-nav .nav-row .nav-main')?.focus());
+    await browser.waitUntil(async () => browser.execute(() => getComputedStyle(document.querySelector<HTMLElement>('.nav-actions')!).opacity === '1'));
+    const after = await browser.execute(() => {
+      const navRow = document.querySelector<HTMLElement>('.list-nav .nav-row');
+      const count = document.querySelector<HTMLElement>('.list-nav .nav-row .nav-count');
+      const actions = document.querySelector<HTMLElement>('.list-nav .nav-row .nav-actions');
+      const rtl = navRow ? getComputedStyle(navRow).direction === 'rtl' : false;
+      return {
+        countEdge: Math.round(count ? (rtl ? count.getBoundingClientRect().left : count.getBoundingClientRect().right) : 0),
+        countOpacity: count ? getComputedStyle(count).opacity : '',
+        actionsOpacity: actions ? getComputedStyle(actions).opacity : ''
+      };
+    });
+
+    expect(after.countEdge).toBe(before?.countEdge);
+    expect(after.countOpacity).toBe('0');
+    expect(after.actionsOpacity).toBe('1');
+  });
+
   it('uses one 64 px header rhythm and keeps product identity in the window title', async () => {
     const metrics = await browser.execute(() => {
       const sidebar = document.querySelector<HTMLElement>('.sidebar-header');

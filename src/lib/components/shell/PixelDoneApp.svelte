@@ -793,8 +793,12 @@
                 <span class="nav-name"><ScriptAwareText text={list.name} role="serif" /></span><span class="nav-count">{list.items.filter((item) => !item.completed).length}</span>
               </button>
             {/if}
-            {#if editingListId !== list.id}<button class="row-more" title={t('edit_list')} aria-label={`${t('edit_list')}: ${list.name}`} onclick={() => beginRename(list)}><Icon name="edit" /></button>{/if}
-            {#if editingListId !== list.id && normalLists.length > 1}<button class="row-delete" title={t('delete_list')} aria-label={`${t('delete_list')}: ${list.name}`} onclick={() => void deleteList(list)}><Icon name="trash" /></button>{/if}
+            {#if editingListId !== list.id}
+              <div class="nav-actions">
+                <button class="row-more" title={t('edit_list')} aria-label={`${t('edit_list')}: ${list.name}`} onclick={() => beginRename(list)}><Icon name="edit" /></button>
+                {#if normalLists.length > 1}<button class="row-delete" title={t('delete_list')} aria-label={`${t('delete_list')}: ${list.name}`} onclick={() => void deleteList(list)}><Icon name="trash" /></button>{/if}
+              </div>
+            {/if}
           </div>
         {/each}
       </nav>
