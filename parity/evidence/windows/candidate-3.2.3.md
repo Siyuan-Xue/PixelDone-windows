@@ -13,5 +13,12 @@ PixelDone Windows 3.2.3 is the formal startup hotfix for the broken 3.2.1 releas
 - For 3.2.3, Bun passed 19 tests with 68 expectations; all 23 Rust unit tests, migration tests, 7 Windows productization tests, Clippy, production builds, and all 10 native Windows E2E spec files passed.
 - The local formal 3.2.3 x64 NSIS installer is 5,394,334 bytes with SHA-256 `2E483900DD3E530561E6B020BB6C10CA78EC24B82BCFA65DC90A40BBA4EF72CB` and a 420-byte Tauri updater signature verified against the embedded public key.
 - The 3.2.3 installer overwrote the working 3.2.2 candidate with exit code 0. The installed file reports version 3.2.3, and the installed application remained responsive beyond the 10-second observation window against the original user database.
-- GitHub release and cloud-built artifact verification results are recorded after publication.
 - The six pre-existing cross-device cloud rows remain unverified and are not represented as passed.
+
+## Published release verification
+
+- GitHub Actions run `29297164894` completed successfully for source commit `d96f55d5bd332e78f809aa21ff754d416cd628e6` and immutable tag `v3.2.3`.
+- The public, non-draft, non-prerelease `PixelDone v3.2.3` release contains the four expected assets: x64 NSIS installer, detached updater signature, SHA-256 file, and `latest.json`.
+- The cloud-built installer is 5,396,845 bytes with SHA-256 `92B63D9934705C12932C1C370906A34BD3C12C5ED3A447E52567FA73153C4A7E`; the uploaded SHA file and GitHub asset digest match exactly.
+- The public `latest.json` reports version 3.2.3, the v3.2.3 installer URL, and a 420-character updater signature.
+- The downloaded cloud installer and signature passed the embedded-public-key integrity test. That cloud installer then overwrote the local candidate with exit code 0, and the installed 3.2.3 application remained responsive beyond 10 seconds against the original user database.
