@@ -1129,15 +1129,17 @@ async fn apply_remote_attachments(
         let byte_size = remote
             .byte_size
             .filter(|size| (1..=10 * 1024 * 1024).contains(size))
-            .ok_or_else(|| AppError::Network("Invalid attachment byte_size".to_owned()))?;
+            .ok_or_else(|| {
+                AppError::RemoteDataInvalid("Invalid attachment byte_size".to_owned())
+            })?;
         if !is_safe_object_path(object_path) {
-            return Err(AppError::Network(
+            return Err(AppError::RemoteDataInvalid(
                 "Invalid attachment object_path".to_owned(),
             ));
         }
         let expected_prefix = format!("{}/{}/", remote.owner_user_id, remote.todo_local_id);
         if !object_path.starts_with(&expected_prefix) {
-            return Err(AppError::Network(
+            return Err(AppError::RemoteDataInvalid(
                 "Attachment object_path owner prefix does not match metadata".to_owned(),
             ));
         }
@@ -1195,7 +1197,7 @@ fn required_attachment_field<'a>(
 ) -> Result<&'a String, AppError> {
     value
         .as_ref()
-        .ok_or_else(|| AppError::Network(format!("Attachment {name} is missing")))
+        .ok_or_else(|| AppError::RemoteDataInvalid(format!("Attachment {name} is missing")))
 }
 
 async fn delete_local_attachment(
@@ -1517,6 +1519,8 @@ async fn sync_view(
             SyncState::Synced
         },
         message: message.or(image_error),
+        issue_code: None,
+        next_retry_at_millis: None,
         remote_version: Some(version),
         pending_count,
         conflict_count,
@@ -1690,8 +1694,8 @@ fn require_schema(value: &str) -> Result<(), AppError> {
     if value == EXPECTED_SCHEMA {
         Ok(())
     } else {
-        Err(AppError::Network(format!(
-            "SERVER UPDATE REQUIRED: expected {EXPECTED_SCHEMA}, received {value}"
+        Err(AppError::ServerUpdateRequired(format!(
+            "expected {EXPECTED_SCHEMA}, received {value}"
         )))
     }
 }
@@ -1702,7 +1706,9 @@ fn parse_priority(value: &str) -> Result<TodoPriority, AppError> {
         "HIGH" => Ok(TodoPriority::High),
         "MEDIUM" => Ok(TodoPriority::Medium),
         "LOW" => Ok(TodoPriority::Low),
-        _ => Err(AppError::Network(format!("未知优先级 {value}"))),
+        _ => Err(AppError::RemoteDataInvalid(format!(
+            "Unknown priority {value}"
+        ))),
     }
 }
 
@@ -1720,7 +1726,9 @@ fn parse_repeat(value: &str) -> Result<ReminderRepeat, AppError> {
         "NONE" => Ok(ReminderRepeat::None),
         "DAILY" => Ok(ReminderRepeat::Daily),
         "WEEKLY" => Ok(ReminderRepeat::Weekly),
-        _ => Err(AppError::Network(format!("未知重复提醒 {value}"))),
+        _ => Err(AppError::RemoteDataInvalid(format!(
+            "Unknown reminder repeat {value}"
+        ))),
     }
 }
 
@@ -1734,7 +1742,7 @@ fn repeat_name(value: ReminderRepeat) -> &'static str {
 
 impl From<serde_json::Error> for AppError {
     fn from(value: serde_json::Error) -> Self {
-        AppError::Network(value.to_string())
+        AppError::RemoteDataInvalid(value.to_string())
     }
 }
 

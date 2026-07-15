@@ -45,60 +45,50 @@ async function setCssViewport(width: number, height: number): Promise<{ innerWid
 }
 
 describe('PixelDone 3.1.3 desktop layout', () => {
-  it('keeps checklist counts at the trailing edge until hover or focus actions replace them', async () => {
-    const before = await browser.execute(() => {
-      const navRow = document.querySelector<HTMLElement>('.list-nav .nav-row');
-      const count = navRow?.querySelector<HTMLElement>('.nav-count');
-      const actions = navRow?.querySelector<HTMLElement>('.nav-actions');
-      if (!navRow || !count || !actions) return null;
-      let stylesheetText = '';
-      for (const sheet of Array.from(document.styleSheets)) {
-        try {
-          stylesheetText += Array.from(sheet.cssRules).map((rule) => rule.cssText).join('\n');
-        } catch {
-          // All production styles are local; ignore browser-owned sheets if one is inaccessible.
+  it('removes normal checklist counts while retaining the Trash count and hover actions', async () => {
+    let todoId: string | null = null;
+    try {
+      let snapshot = await bootstrap();
+      const normal = snapshot.checklists.find((list: any) => list.kind === 'NORMAL');
+      const created = await invoke('create_todo', {
+        expectedRevision: snapshot.revision,
+        checklistId: normal.id,
+        draft: { title: 'E2E TRASH COUNT', priority: 'LOW', dueAtMillis: 0, reminderRepeat: 'NONE' }
+      });
+      todoId = created.changedIds.find((id: string) => id !== normal.id) ?? null;
+      if (!todoId) throw new Error('Created todo id missing');
+      await invoke('move_todo_to_trash', {
+        expectedRevision: created.revision,
+        checklistId: normal.id,
+        todoId
+      });
+      snapshot = await bootstrap();
+      const trashCount = snapshot.checklists.find((list: any) => list.kind === 'TRASH').items.length;
+      await browser.refresh();
+      await $('.list-nav .nav-row .nav-actions').waitForExist();
+
+      const before = await browser.execute(() => ({
+        normalCounts: document.querySelectorAll('.list-nav .nav-row .nav-count').length,
+        trashCount: document.querySelector<HTMLElement>('.special-nav .special-row .nav-count')?.textContent?.trim() ?? '',
+        actionsOpacity: getComputedStyle(document.querySelector<HTMLElement>('.list-nav .nav-row .nav-actions')!).opacity
+      }));
+      expect(before.normalCounts).toBe(0);
+      expect(before.trashCount).toBe(String(trashCount));
+      expect(before.actionsOpacity).toBe('0');
+
+      await browser.execute(() => document.querySelector<HTMLElement>('.list-nav .nav-row .nav-main')?.focus());
+      await browser.waitUntil(async () => browser.execute(() => getComputedStyle(document.querySelector<HTMLElement>('.nav-actions')!).opacity === '1'));
+      expect(await browser.execute(() => getComputedStyle(document.querySelector<HTMLElement>('.nav-actions')!).opacity)).toBe('1');
+    } finally {
+      if (todoId) {
+        const snapshot = await bootstrap();
+        if (snapshot.checklists.some((list: any) => list.kind === 'TRASH' && list.items.some((item: any) => item.id === todoId))) {
+          await invoke('purge_todo', { expectedRevision: snapshot.revision, todoId });
         }
       }
-      const rowRect = navRow.getBoundingClientRect();
-      const countRect = count.getBoundingClientRect();
-      const rtl = getComputedStyle(navRow).direction === 'rtl';
-      return {
-        trailingGap: Math.round(rtl ? countRect.left - rowRect.left : rowRect.right - countRect.right),
-        countEdge: Math.round(rtl ? countRect.left : countRect.right),
-        rtl,
-        countOpacity: getComputedStyle(count).opacity,
-        actionsOpacity: getComputedStyle(actions).opacity,
-        actionsPosition: getComputedStyle(actions).position,
-        hasHoverActionsRule: stylesheetText.includes('.nav-row:hover .nav-actions'),
-        hasHoverCountRule: stylesheetText.includes('.nav-row:hover .nav-count')
-      };
-    });
-
-    expect(before).not.toBeNull();
-    expect(before?.trailingGap).toBeLessThanOrEqual(12);
-    expect(before?.countOpacity).toBe('1');
-    expect(before?.actionsOpacity).toBe('0');
-    expect(before?.actionsPosition).toBe('absolute');
-    expect(before?.hasHoverActionsRule).toBe(true);
-    expect(before?.hasHoverCountRule).toBe(true);
-
-    await browser.execute(() => document.querySelector<HTMLElement>('.list-nav .nav-row .nav-main')?.focus());
-    await browser.waitUntil(async () => browser.execute(() => getComputedStyle(document.querySelector<HTMLElement>('.nav-actions')!).opacity === '1'));
-    const after = await browser.execute(() => {
-      const navRow = document.querySelector<HTMLElement>('.list-nav .nav-row');
-      const count = document.querySelector<HTMLElement>('.list-nav .nav-row .nav-count');
-      const actions = document.querySelector<HTMLElement>('.list-nav .nav-row .nav-actions');
-      const rtl = navRow ? getComputedStyle(navRow).direction === 'rtl' : false;
-      return {
-        countEdge: Math.round(count ? (rtl ? count.getBoundingClientRect().left : count.getBoundingClientRect().right) : 0),
-        countOpacity: count ? getComputedStyle(count).opacity : '',
-        actionsOpacity: actions ? getComputedStyle(actions).opacity : ''
-      };
-    });
-
-    expect(after.countEdge).toBe(before?.countEdge);
-    expect(after.countOpacity).toBe('0');
-    expect(after.actionsOpacity).toBe('1');
+      await browser.refresh();
+      await $('.sidebar-header').waitForDisplayed();
+    }
   });
 
   it('uses one 64 px header rhythm and keeps product identity in the window title', async () => {

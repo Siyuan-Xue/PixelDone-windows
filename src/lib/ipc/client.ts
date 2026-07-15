@@ -23,6 +23,16 @@ declare global {
       email: string;
       password: string;
     }) => Promise<MutationResult>;
+    __PIXELDONE_E2E_AUTH_CHANGE_PASSWORD__?: (input: {
+      expectedRevision: number;
+      currentPassword: string;
+      newPassword: string;
+      confirmation: string;
+    }) => Promise<MutationResult>;
+    __PIXELDONE_E2E_SELECT_CHECKLIST__?: (input: {
+      expectedRevision: number;
+      checklistId: string;
+    }) => Promise<MutationResult>;
   }
 }
 
@@ -47,9 +57,9 @@ let browserSnapshot: AppSnapshot = {
     ,sidebarWidthPx: 320
   },
   auth: { cloudAvailable: true, signedIn: false, userId: null, userEmail: null, insecureHttp: true },
-  sync: { state: 'SIGNED_OUT', message: '浏览器预览模式', remoteVersion: null, pendingCount: 0, conflictCount: 0, insecureHttp: true },
+  sync: { state: 'SIGNED_OUT', message: '浏览器预览模式', issueCode: null, nextRetryAtMillis: null, remoteVersion: null, pendingCount: 0, conflictCount: 0, insecureHttp: true },
   reminder: { state: 'IDLE', activeTodoIds: [], lastFiredAtMillis: null, scheduledCount: 0, scheduleHorizonAtMillis: null, scheduleTruncated: false, message: null },
-  update: { state: 'CURRENT', currentVersion: '3.2.5', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
+  update: { state: 'CURRENT', currentVersion: '3.2.6', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
   checklists: [
     {
       id: 'main',
@@ -158,6 +168,9 @@ export const api = {
     return isTauri() ? invoke('bootstrap') : cloneSnapshot();
   },
   async selectChecklist(expectedRevision: number, checklistId: string): Promise<MutationResult> {
+    if (import.meta.env.MODE === 'e2e' && window.__PIXELDONE_E2E_SELECT_CHECKLIST__) {
+      return window.__PIXELDONE_E2E_SELECT_CHECKLIST__({ expectedRevision, checklistId });
+    }
     if (isTauri()) return invoke('select_checklist', { expectedRevision, checklistId });
     return browserMutation(expectedRevision, (snapshot) => {
       snapshot.selectedChecklistId = checklistId;
@@ -388,6 +401,9 @@ export const api = {
     return invoke('auth_sign_out', { expectedRevision });
   },
   async changePassword(expectedRevision: number, currentPassword: string, newPassword: string, confirmation: string): Promise<MutationResult> {
+    if (import.meta.env.MODE === 'e2e' && window.__PIXELDONE_E2E_AUTH_CHANGE_PASSWORD__) {
+      return window.__PIXELDONE_E2E_AUTH_CHANGE_PASSWORD__({ expectedRevision, currentPassword, newPassword, confirmation });
+    }
     return invoke('auth_change_password', { expectedRevision, currentPassword, newPassword, confirmation });
   },
   async syncNow(expectedRevision: number): Promise<MutationResult> {

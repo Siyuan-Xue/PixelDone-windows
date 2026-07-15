@@ -1,8 +1,10 @@
 import { message, type Locale, type MessageKey } from '$lib/generated/i18n';
 import {
   windowsAuthValidationMessage,
+  windowsReliabilityMessage,
   windowsMessage,
   type WindowsAuthValidationKey,
+  type WindowsReliabilityMessageKey,
   type WindowsMessageKey
 } from '$lib/i18n/windows';
 
@@ -25,4 +27,11 @@ export function uiWindowsAuthValidationMessage(
   key: WindowsAuthValidationKey
 ): string {
   return uiText(windowsAuthValidationMessage(locale, key));
+}
+
+export function uiWindowsReliabilityMessage(
+  locale: Locale,
+  key: WindowsReliabilityMessageKey
+): string {
+  return uiText(windowsReliabilityMessage(locale, key));
 }

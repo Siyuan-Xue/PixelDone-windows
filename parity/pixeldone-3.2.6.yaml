@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 2,
+  "baselineManifest": "pixeldone-3.1.0.yaml",
+  "windowsTarget": {
+    "product": "PixelDone Windows",
+    "version": "3.2.6",
+    "stage": "formal_release",
+    "evidence": ["parity/evidence/windows/candidate-3.2.6.md"],
+    "authorizedIncompleteRows": [
+      "IMAGE-LOCAL-001",
+      "AUTH-001",
+      "SYNC-MANUAL-001",
+      "SYNC-CAS-001",
+      "SYNC-IMAGE-LOCAL-001",
+      "IMAGE-CLOUD-EXCLUDED"
+    ]
+  },
+  "rowOverrides": {
+    "AUTH-001": {
+      "title": "Register, sign in, sign out, and change password after verifying the current password/global sign-out",
+      "variance": "none"
+    },
+    "SYNC-IMAGE-LOCAL-001": {
+      "title": "Keep attachment transfer separate from todo text sync so image failures do not block ordinary sync",
+      "variance": "none",
+      "android": {
+        "source": ["app/src/main/java/com/milesxue/pixeldone/data/sync/TodoAttachmentSyncService.kt"],
+        "tests": ["TodoSyncCoordinatorTest", "SupabaseRemoteTodoDataSourceTest"]
+      },
+      "windows": {
+        "rustSource": ["src-tauri/src/infrastructure/sync/mod.rs", "src-tauri/migrations/0007_attachment_sync.sql"],
+        "uiEntry": ["src/lib/components/shell/PixelDoneApp.svelte"],
+        "tests": ["src-tauri/src/infrastructure/sync/mod.rs", "e2e/specs/image.e2e.ts"]
+      }
+    },
+    "IMAGE-CLOUD-EXCLUDED": {
+      "area": "image",
+      "title": "Private Supabase Storage upload, on-demand download, cross-device replacement, and cleanup",
+      "requiredForRelease": true,
+      "variance": "none",
+      "android": {
+        "source": ["app/src/main/java/com/milesxue/pixeldone/data/sync/TodoAttachmentSyncService.kt", "docs/pixeldone-supabase-3.2.0-storage-policies.sql", "docs/pixeldone-supabase-3.2.0-migration.sql"],
+        "tests": ["SupabaseRemoteTodoDataSourceTest", "TodoEntityMapperTest"]
+      },
+      "windows": {
+        "rustSource": ["src-tauri/src/infrastructure/auth/mod.rs", "src-tauri/src/infrastructure/sync/mod.rs", "src-tauri/migrations/0007_attachment_sync.sql"],
+        "uiEntry": ["src/lib/components/shell/PixelDoneApp.svelte"],
+        "tests": ["src-tauri/src/infrastructure/sync/mod.rs", "src-tauri/src/application/commands/image.rs"]
+      },
+      "evidence": {
+        "android": ["parity/evidence/android/candidate-3.2.0.md"],
+        "windows": ["parity/evidence/windows/candidate-3.2.0.md"]
+      }
+    }
+  },
+  "overrideGroups": [
+    {
+      "id": "cross-platform-cloud-3.2.0",
+      "rows": [
+        "IMAGE-LOCAL-001", "AUTH-001", "SYNC-MANUAL-001", "SYNC-CAS-001",
+        "SYNC-IMAGE-LOCAL-001", "IMAGE-CLOUD-EXCLUDED"
+      ],
+      "status": "in_progress",
+      "windowsEvidence": ["parity/evidence/windows/candidate-3.2.0.md"],
+      "windowsTests": ["src-tauri/src/infrastructure/sync/mod.rs", "src-tauri/src/infrastructure/realtime/mod.rs"]
+    },
+    {
+      "id": "release-build-3.2.6",
+      "rows": ["RELEASE-NSIS-001"],
+      "status": "verified",
+      "windowsEvidence": ["parity/evidence/windows/candidate-3.2.6.md"]
+    }
+  ]
+}

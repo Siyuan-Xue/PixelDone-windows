@@ -12,7 +12,7 @@ pub use dock::{DockAction, DockConfig, DockPlusPlacement};
 pub use error::AppError;
 pub use sync::{
     AppLanguage, AuthView, ConflictResolutionChoice, ReminderRunView, SyncConflictFieldView,
-    SyncConflictValueView, SyncConflictView, SyncRunView, SyncState, UpdateView,
+    SyncConflictValueView, SyncConflictView, SyncIssueCode, SyncRunView, SyncState, UpdateView,
 };
 pub use todo::{ReminderRepeat, SortMode, TodoItem, TodoPriority};
 

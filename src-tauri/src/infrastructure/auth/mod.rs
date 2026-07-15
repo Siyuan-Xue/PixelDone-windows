@@ -308,7 +308,13 @@ impl SupabaseClient {
         } else {
             &text
         })
-        .map_err(|error| AppError::Network(error.to_string()))
+        .map_err(|error| {
+            if path.starts_with("/auth/") {
+                AppError::Auth(format!("Invalid authentication response: {error}"))
+            } else {
+                AppError::RemoteDataInvalid(error.to_string())
+            }
+        })
     }
 }
 

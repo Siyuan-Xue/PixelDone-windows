@@ -6,7 +6,10 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::{
-    application::{commands::mutate, state::ManagedAppState},
+    application::{
+        commands::{ensure_revision, mutate},
+        state::ManagedAppState,
+    },
     domain::{AppError, MutationResult, unix_now_millis},
     infrastructure::{
         db::LocalTodoAttachment,
@@ -24,6 +27,7 @@ pub async fn attach_todo_image(
     todo_id: String,
     source_path: String,
 ) -> Result<MutationResult, AppError> {
+    ensure_revision(&state, expected_revision).await?;
     let source = fs::canonicalize(&source_path)
         .map_err(|error| AppError::Validation(format!("Unable to read image: {error}")))?;
     if !fs::metadata(&source)?.is_file() {
@@ -111,6 +115,7 @@ pub async fn delete_todo_image(
     checklist_id: String,
     todo_id: String,
 ) -> Result<MutationResult, AppError> {
+    ensure_revision(&state, expected_revision).await?;
     let (previous_file, previous_attachment) = {
         let runtime = state.inner.lock().await;
         let file = runtime

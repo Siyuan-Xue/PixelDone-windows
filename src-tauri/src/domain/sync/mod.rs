@@ -14,11 +14,24 @@ pub enum SyncState {
     ServerUpdateRequired,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SyncIssueCode {
+    NetworkRetrying,
+    AuthExpired,
+    ServerUpdateRequired,
+    LocalStorageError,
+    RemoteDataInvalid,
+    Unknown,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncRunView {
     pub state: SyncState,
     pub message: Option<String>,
+    pub issue_code: Option<SyncIssueCode>,
+    pub next_retry_at_millis: Option<i64>,
     pub remote_version: Option<i64>,
     pub pending_count: usize,
     pub conflict_count: usize,

@@ -49,7 +49,6 @@
 .nav-actions { position: absolute; inset-block: 0; inset-inline-end: 0; display: flex; align-items: center; padding-inline: 4px; background: var(--nav-row-bg); opacity: 0; pointer-events: none; }
 .row-more, .row-delete { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border: 0; background: transparent; }
 .row-delete { color: var(--error); }
-.nav-row:hover .nav-count, .nav-row:focus-within .nav-count { opacity: 0; }
 .nav-row:hover .nav-actions, .nav-row:focus-within .nav-actions { opacity: 1; pointer-events: auto; }
 .nav-main input { height: 36px; min-height: 36px; padding: 4px 6px; }
 .inline-create { display: grid; grid-template-columns: minmax(0, 1fr) 40px; gap: 4px; margin: 0 0 8px; padding: 0 4px; }
@@ -87,6 +86,8 @@ button.status-signal:hover { border-color: var(--accent); color: var(--accent-ac
 .status-signal.error, .status-signal.conflict { border-color: var(--error); color: var(--error); }
 .status-signal.success { border-color: var(--success); color: var(--success); }
 .workspace-alert { display: flex; align-items: center; justify-content: space-between; min-height: 44px; border-bottom: 1px solid var(--error); padding: 8px 20px; color: var(--error); background: color-mix(in srgb, var(--error), transparent 88%); }
+.operation-notice.warning { border-color: var(--accent-active); color: var(--accent-active); background: color-mix(in srgb, var(--accent), transparent 88%); }
+.operation-notice.success { border-color: var(--success); color: var(--success); background: color-mix(in srgb, var(--success), transparent 88%); }
 
 .task-list { flex: 1; min-height: 0; overflow: auto; padding: 12px 20px 104px; }
 .task-list-inner { width: min(100%, 1040px); margin: 0 auto; }
@@ -154,7 +155,6 @@ button.status-signal:hover { border-color: var(--accent); color: var(--accent-ac
 .setting-icon-button.danger:hover { color: var(--bg); background: var(--error); }
 .setting-icon-button:disabled { cursor: not-allowed; opacity: .38; }
 .setting-icon-button.section-action { margin: 8px 12px 0 auto; }
-.password-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; border: 1px solid var(--border); padding: 12px; background: var(--surface); }
 .segmented-row { display: grid; grid-template-columns: repeat(3, 1fr); grid-column: 1 / -1; border: 1px solid var(--border); }
 .segmented-row button { min-height: 44px; border: 0; border-right: 1px solid var(--border); background: transparent; }
 .segmented-row button:last-child { border-right: 0; }
@@ -211,6 +211,7 @@ button.selected .pixel-choice { border: 4px solid var(--accent); background: var
 .auth-error { color: var(--error); font-size: 12px; line-height: 16px; font-weight: 500; }
 .auth-submit { width: 100%; max-height: none; }
 .auth-submit:disabled { cursor: wait; opacity: .56; }
+.password-modal-form { gap: 14px; }
 .todo-editor-form { display: grid; gap: 16px; padding: 16px; }
 .todo-editor-form label, .todo-editor-form fieldset { display: grid; gap: 6px; border: 0; padding: 0; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
 .todo-editor-form legend { margin-bottom: 6px; }

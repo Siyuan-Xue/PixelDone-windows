@@ -3144,7 +3144,7 @@ dependencies = [
 
 [[package]]
 name = "pixeldone-windows"
-version = "3.2.5"
+version = "3.2.6"
 dependencies = [
  "base64 0.22.1",
  "futures-util",

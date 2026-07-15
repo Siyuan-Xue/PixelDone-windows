@@ -1,11 +1,11 @@
 # PixelDone Windows
 
-当前工作树是 PixelDone for Windows 3.2.5 正式版。3.2.5 基于已发布 3.2.4，统一 Windows 与 Android 的多语言文字层级，并将登录/注册收敛到独立账号弹窗。
+当前工作树是 PixelDone for Windows 3.2.6 正式版。3.2.6 基于已发布 3.2.5 与随后合入的清单对齐修复，集中改进密码修改、同步恢复和 Options 告警边界。
 
 ## 版本基线
 
 - Android：配套正式版为 PixelDone 3.2.3（versionCode 84，Room v7）。
-- Windows：当前正式版本为 3.2.5，安装身份与数据目录保持不变。
+- Windows：当前正式版本为 3.2.6，安装身份与数据目录保持不变。
 - Android 与 Windows：Supabase 3.2 两阶段迁移及单行总验收已于 2026-07-13 全部通过。
 - Windows：Rust 1.96.1 / Edition 2024、Tauri 2、Svelte 5.56.4、TypeScript 6.0.2、Bun 1.3.14。
 - 支持范围：Windows 11 24H2+，仅发布 x64 NSIS 安装包。
@@ -15,7 +15,7 @@
 
 ## 安装与运行
 
-当前正式版使用 `PixelDone_3.2.5_x64-setup.exe`。正式默认目录是 `%LOCALAPPDATA%\PixelDone`，主程序名为 `PixelDone.exe`。
+当前正式版使用 `PixelDone_3.2.6_x64-setup.exe`。正式默认目录是 `%LOCALAPPDATA%\PixelDone`，主程序名为 `PixelDone.exe`。
 
 重复运行相同或更高版本的 EXE 会进入 NSIS 维护/升级流程并覆盖同一产品安装，不会创建多个 PixelDone。Beta 使用独立产品标识，允许与正式版并存。
 
@@ -23,7 +23,7 @@
 
 ## 桌面界面
 
-3.2.5 将页面、清单和弹窗标题统一为各语言对应的衬线体，任务、按钮、输入和状态统一为无衬线体；一级分区标题使用 clay 强调。用户清单、任务和冲突值按 Unicode 脚本分段选字，不再随界面语言改变字体。验证记录见 3.2.5 release evidence。
+3.2.6 延续 3.2.5 的确定性多语言字体体系，并将修改密码收敛到独立矩形弹窗。普通清单不再显示待办数量，Trash 仍显示数量；手动同步入口固定在 Sync 行。验证记录见 3.2.6 release evidence。
 
 - 左侧栏集中显示普通清单、回收站、设置、账号和同步摘要；独立方形按钮负责新建清单，不再使用长按任务“+”按钮的移动端手势。
 - 主工作区顶部显示当前清单、Active/Done 数量、同步状态以及按需出现的冲突、通知和更新异常。
@@ -31,6 +31,7 @@
 - 底部 Dock 使用互相分离的方形动作按钮和 56px clay“+”按钮；“+”只新建任务，位置继续由本机 Dock 设置控制。
 - 新建和编辑任务使用居中的直角矩形模态框，不再占用永久第三栏。
 - 未登录时点击 Account 行尾登录按钮会打开独立账号弹窗；登录/注册使用轻量文字标签和 clay 下划线切换，错误留在弹窗内显示。
+- 已登录时点击“修改密码”会打开同规格弹窗；修改成功后当前设备退出登录，成功提示不会使用顶部红色告警。
 
 ## 更新、自启动与提醒
 
@@ -45,6 +46,8 @@
 - 登录、注册或恢复会话后立即调用 `pixeldone_pull_changes` RPC，完整拉取当前用户的清单、代办、附件、设置与 tombstone。
 - 常驻期间订阅 `todo_checklists`、`todo_items`、`todo_attachments`、`user_settings`、`sync_tombstones` 五张表的 Supabase Realtime 变更。事件只触发约 500ms 防抖后的事务化同步，不直接写本地数据库。
 - Realtime 具备心跳、JWT 更新重连和 1–30 秒指数退避。Windows 不运行固定间隔同步轮询；首次登录、会话恢复、Realtime 建连/重连成功和本地修改均会触发完整游标补拉。
+- 普通 revision 竞态会静默刷新并自动重放一次，不再直接显示红色“状态过期”；网络同步失败会按 1、2、4、8、16、30 秒退避持续重试，新本地修改或 Realtime 事件会重置退避。
+- Sync 行按网络重试、认证过期、服务端版本、本地存储、远端数据和未知错误显示本地化说明；顶部红色告警只保留初始化、数据库、不可恢复的 Windows 操作和图片读取错误。
 - Settings 仅在登录状态下提供“当前密码→新密码”修改；修改成功后调用 Supabase 全局退出并清除本机凭据，不依赖 SMTP 重置邮件。
 - 图片原始字节通过 Supabase 原生私有 Storage 上传；RPC 只同步 SHA-256、MIME、大小、对象路径和版本。远程图片打开时才下载到本机缓存，图片失败不阻塞正文、清单、设置或 tombstone 同步。
 - 本地修改或任一同步完成后立即按最新完整快照重建本机 Scheduled Toast 队列；远程新增/改期会注册或替换提醒，完成、回收站、永久删除及清单删除会撤销提醒。15 分钟校准仍作为系统时间变化兜底。
@@ -95,4 +98,4 @@ $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw 'src-tauri/signing/pixeldone-u
 bun tauri build --bundles nsis --target x86_64-pc-windows-msvc
 ```
 
-Supabase 3.2 Storage 策略和公共 schema 保持不变。3.2.5 是正式发布；发布清单仍明确保留六项跨设备云端场景作为已授权但尚未完成的验证项，不应将它们误报为已验证。
+Supabase 3.2 Storage 策略和公共 schema 保持不变。3.2.6 是正式发布；发布清单仍明确保留六项跨设备云端场景作为已授权但尚未完成的验证项，不应将它们误报为已验证。

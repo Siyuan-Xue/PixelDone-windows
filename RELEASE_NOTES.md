@@ -1,25 +1,26 @@
-# PixelDone for Windows 3.2.5
+# PixelDone for Windows 3.2.6
 
-PixelDone for Windows 3.2.5 starts from the published 3.2.4 baseline and focuses on deterministic multilingual typography and a cleaner account flow.
+PixelDone for Windows 3.2.6 builds on the published 3.2.5 release and the subsequent checklist alignment fix. It focuses on a cleaner account flow and synchronization that recovers from normal races and transient outages without alarming the user.
 
-## Typography
+## Account and Options
 
-- Aligns Windows text roles with Android: serif for page, checklist, dialog, and section titles; sans-serif for tasks, labels, buttons, inputs, status, and supporting text.
-- Promotes top-level section titles to 16/22 semibold serif text with restrained clay emphasis.
-- Uses bundled Source families for English, French, Russian, and Spanish; Noto SC for Simplified Chinese; and Noto Arabic/Naskh Arabic for Arabic.
-- Renders user-authored checklist names, todo titles, and conflict values by Unicode script run so their typeface does not change with the UI locale.
-- Gives every native language selector label its own language and direction metadata.
+- Moves password changes into a focused rectangular dialog that matches sign-in and registration.
+- Adds localized client validation, independent password visibility controls, focus containment, Enter/Escape/backdrop handling, pending-request isolation, and focus restoration.
+- Signs out the current device after a successful password change and shows a short non-red success notice.
+- Moves the manual sync action from Account to the Sync row and disables it while synchronization is active.
+- Removes todo counts from ordinary checklist navigation while retaining the Trash item count.
 
-## Account dialog
+## Synchronization reliability
 
-- Removes the always-visible sign-in/register form from Settings.
-- Opens a focused, rectangular account dialog from the Account row's login action.
-- Replaces the filled segmented switch with lightweight text tabs and a 2 px clay underline.
-- Adds password visibility, localized client validation, inline authentication errors, focus containment, Escape/backdrop dismissal, and trigger-focus restoration.
-- Keeps pending authentication results safe when the dialog is closed and prevents obsolete errors from leaking into a later session.
+- Silently reloads and retries one UI mutation after `STALE_REVISION`; repeated races and remote deletion use non-red guidance.
+- Rejects old mutation results and reloads on revision gaps so delayed deltas cannot regress the WebView snapshot.
+- Validates revisions before authentication cloud side effects and converges successful sign-in, sign-up, sign-out, and password changes onto the latest local snapshot.
+- Retries network sync failures after 1, 2, 4, 8, 16, and 30 seconds, capped at 30 seconds until connectivity returns. New local changes and Supabase Realtime invalidations reset the backoff.
+- Classifies sync problems as network retry, expired authentication, server update required, local storage error, invalid remote data, or unknown error and keeps them in the Sync row.
+- Keeps the top red alert for initialization, local database, unrecoverable Windows operations, and image reading failures instead of normal cloud recovery states.
 
 ## Release status
 
-- Version metadata, tag, updater manifest, and the x64 NSIS artifact target 3.2.5.
+- Version metadata, tag, updater manifest, and x64 NSIS artifact target 3.2.6.
 - The formal NSIS package carries the required Tauri updater integrity signature. Authenticode remains intentionally disabled, so Windows can still identify the installer as an unknown publisher.
 - Existing cleartext HTTP/WS deployment risk remains unchanged. Six cross-device cloud scenarios remain explicitly authorized release exceptions and are not represented as verified.

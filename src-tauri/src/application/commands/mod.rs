@@ -19,6 +19,39 @@ pub mod storage;
 pub mod sync;
 pub mod update;
 
+pub(super) async fn ensure_revision(
+    state: &State<'_, ManagedAppState>,
+    expected_revision: i64,
+) -> Result<(), AppError> {
+    require_revision(
+        state.inner.lock().await.snapshot.revision,
+        expected_revision,
+    )
+}
+
+fn require_revision(actual_revision: i64, expected_revision: i64) -> Result<(), AppError> {
+    if actual_revision == expected_revision {
+        Ok(())
+    } else {
+        Err(AppError::StaleRevision)
+    }
+}
+
+#[cfg(test)]
+mod revision_tests {
+    use super::*;
+
+    #[test]
+    fn stale_preflight_stops_work_before_a_side_effect() {
+        let mut side_effect_started = false;
+        if require_revision(9, 8).is_ok() {
+            side_effect_started = true;
+        }
+        assert!(!side_effect_started);
+        assert!(require_revision(9, 9).is_ok());
+    }
+}
+
 pub(super) async fn mutate<F>(
     state: State<'_, ManagedAppState>,
     expected_revision: i64,
@@ -479,6 +512,7 @@ pub async fn update_settings(
     expected_revision: i64,
     settings: AppSettings,
 ) -> Result<MutationResult, AppError> {
+    ensure_revision(&state, expected_revision).await?;
     let previous_autostart = state.inner.lock().await.snapshot.settings.autostart_enabled;
     if previous_autostart != settings.autostart_enabled {
         let result = if settings.autostart_enabled {

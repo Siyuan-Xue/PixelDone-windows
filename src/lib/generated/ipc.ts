@@ -6,6 +6,7 @@ export type DockPlusPlacement = 'CENTER' | 'LEFT_EDGE' | 'RIGHT_EDGE';
 export type DockAction = 'SORT' | 'DEADLINE' | 'HIDE_DONE' | 'DELETE_DONE' | 'BATCH_DELETE';
 export type AppLanguage = 'SYSTEM' | 'ENGLISH' | 'SIMPLIFIED_CHINESE' | 'ARABIC' | 'FRENCH' | 'RUSSIAN' | 'SPANISH';
 export type SyncState = 'LOCAL_ONLY' | 'SIGNED_OUT' | 'IDLE' | 'SYNCING' | 'SYNCED' | 'CONFLICT' | 'ERROR' | 'SERVER_UPDATE_REQUIRED';
+export type SyncIssueCode = 'NETWORK_RETRYING' | 'AUTH_EXPIRED' | 'SERVER_UPDATE_REQUIRED' | 'LOCAL_STORAGE_ERROR' | 'REMOTE_DATA_INVALID' | 'UNKNOWN';
 export type ConflictResolutionChoice = 'KEEP_LOCAL' | 'KEEP_CLOUD';
 
 export interface TodoItem {
@@ -84,6 +85,8 @@ export interface AuthView {
 export interface SyncRunView {
   state: SyncState;
   message: string | null;
+  issueCode: SyncIssueCode | null;
+  nextRetryAtMillis: number | null;
   remoteVersion: number | null;
   pendingCount: number;
   conflictCount: number;

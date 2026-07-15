@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { windowsAuthValidationMessage, windowsMessage } from '../src/lib/i18n/windows';
+import {
+  windowsAuthValidationMessage,
+  windowsMessage,
+  windowsReliabilityMessage,
+  type WindowsReliabilityMessageKey
+} from '../src/lib/i18n/windows';
 import { uiText, uiWindowsMessage } from '../src/lib/i18n/presentation';
 
 const signedOutSyncMessages = {
@@ -31,6 +36,21 @@ describe('Windows localization', () => {
       const supportedLocale = locale as keyof typeof signedOutSyncMessages;
       expect(windowsAuthValidationMessage(supportedLocale, 'invalidEmail').trim()).not.toBe('');
       expect(windowsAuthValidationMessage(supportedLocale, 'passwordTooShort')).toContain('6');
+    }
+  });
+
+  it('provides password and classified sync guidance for every supported locale', () => {
+    const keys: WindowsReliabilityMessageKey[] = [
+      'passwordFieldsRequired', 'passwordTooShort', 'passwordMustDiffer',
+      'passwordsDoNotMatch', 'passwordChanged', 'staleRevisionAgain', 'targetChanged',
+      'syncNetworkRetrying', 'syncAuthExpired', 'syncServerUpdateRequired',
+      'syncLocalStorageError', 'syncRemoteDataInvalid', 'syncUnknown'
+    ];
+    for (const locale of Object.keys(signedOutSyncMessages)) {
+      const supportedLocale = locale as keyof typeof signedOutSyncMessages;
+      for (const key of keys) {
+        expect(windowsReliabilityMessage(supportedLocale, key).trim()).not.toBe('');
+      }
     }
   });
 

@@ -35,8 +35,33 @@ pub fn start_background_services(app: AppHandle) {
         loop {
             let state = sync_app.state::<ManagedAppState>();
             state.sync_notify.notified().await;
-            tokio::time::sleep(Duration::from_millis(700)).await;
-            automatic_sync(&sync_app).await;
+            let mut attempt = 0_u32;
+            let mut first_run = true;
+            loop {
+                let delay = if first_run {
+                    Duration::from_millis(700)
+                } else {
+                    retry_delay(attempt.saturating_sub(1))
+                };
+                tokio::select! {
+                    () = state.sync_notify.notified() => {
+                        attempt = 0;
+                        first_run = true;
+                        continue;
+                    }
+                    () = tokio::time::sleep(delay) => {}
+                }
+                let next_delay = retry_delay(attempt);
+                let next_retry_at_millis =
+                    unix_now_millis() + i64::try_from(next_delay.as_millis()).unwrap_or(30_000);
+                match automatic_sync(&sync_app, next_retry_at_millis).await {
+                    AutomaticSyncOutcome::Complete => break,
+                    AutomaticSyncOutcome::Retry => {
+                        attempt = attempt.saturating_add(1);
+                        first_run = false;
+                    }
+                }
+            }
         }
     });
     tauri::async_runtime::spawn(realtime_service(app));
@@ -92,7 +117,13 @@ async fn realtime_service(app: AppHandle) {
     }
 }
 
-async fn automatic_sync(app: &AppHandle) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AutomaticSyncOutcome {
+    Complete,
+    Retry,
+}
+
+async fn automatic_sync(app: &AppHandle, next_retry_at_millis: i64) -> AutomaticSyncOutcome {
     use crate::{
         domain::{SyncRunView, SyncState},
         infrastructure::sync::run_sync,
@@ -100,23 +131,26 @@ async fn automatic_sync(app: &AppHandle) {
 
     let state = app.state::<ManagedAppState>();
     let Some(session) = state.session.lock().await.clone() else {
-        return;
+        return AutomaticSyncOutcome::Complete;
     };
     let Ok(_gate) = state.sync_gate.try_lock() else {
-        return;
+        return AutomaticSyncOutcome::Complete;
     };
     let session = match state.cloud.refresh_if_needed(&session, false).await {
         Ok(session) => session,
-        Err(_) => return,
+        Err(error) => {
+            return publish_automatic_sync_failure(app, &state, error, next_retry_at_millis).await;
+        }
     };
-    if state.credentials.save(&session).is_err() {
-        return;
+    if let Err(error) = state.credentials.save(&session) {
+        return publish_automatic_sync_failure(app, &state, error, next_retry_at_millis).await;
     }
     *state.session.lock().await = Some(session.clone());
     let mut runtime = state.inner.lock().await;
     let before = runtime.snapshot.clone();
     let repository = runtime.repository.clone();
-    match run_sync(
+    let mut auth_expired = false;
+    let outcome = match run_sync(
         &state.cloud,
         &repository,
         &session,
@@ -125,35 +159,107 @@ async fn automatic_sync(app: &AppHandle) {
     )
     .await
     {
-        Ok(view) => runtime.snapshot.sync = view,
+        Ok(view) => {
+            runtime.snapshot.sync = view;
+            AutomaticSyncOutcome::Complete
+        }
         Err(error) => {
+            let retryable = error.is_retryable_sync_error();
+            auth_expired = matches!(&error, crate::domain::AppError::Auth(_));
             runtime.snapshot.sync = SyncRunView {
-                state: if error.to_string().contains("SERVER UPDATE REQUIRED") {
+                state: if matches!(&error, crate::domain::AppError::ServerUpdateRequired(_)) {
                     SyncState::ServerUpdateRequired
                 } else {
                     SyncState::Error
                 },
                 message: Some(error.to_string()),
+                issue_code: Some(error.sync_issue_code()),
+                next_retry_at_millis: retryable.then_some(next_retry_at_millis),
                 insecure_http: true,
                 ..runtime.snapshot.sync.clone()
             };
+            if auth_expired {
+                runtime.snapshot.auth = state.cloud.auth_view(None);
+            }
+            if retryable {
+                AutomaticSyncOutcome::Retry
+            } else {
+                AutomaticSyncOutcome::Complete
+            }
         }
+    };
+    if !auth_expired {
+        runtime.snapshot.auth = state.cloud.auth_view(Some(&session));
     }
-    runtime.snapshot.auth = state.cloud.auth_view(Some(&session));
     if runtime.snapshot != before {
         runtime.snapshot.revision += 1;
-        if repository.save_snapshot(&runtime.snapshot).await.is_ok() {
-            let result = MutationResult {
-                revision: runtime.snapshot.revision,
-                changed_ids: vec!["sync".to_owned()],
-                snapshot_delta: SnapshotDelta::between(&before, &runtime.snapshot),
-            };
-            let _ = app.emit("snapshot://delta", result);
-            let _ = app.emit("sync://state", runtime.snapshot.sync.clone());
-        }
+        let _ = repository.save_snapshot(&runtime.snapshot).await;
+        let result = MutationResult {
+            revision: runtime.snapshot.revision,
+            changed_ids: vec!["sync".to_owned()],
+            snapshot_delta: SnapshotDelta::between(&before, &runtime.snapshot),
+        };
+        let _ = app.emit("snapshot://delta", result);
+        let _ = app.emit("sync://state", runtime.snapshot.sync.clone());
     }
     drop(runtime);
+    if auth_expired {
+        let _ = state.credentials.clear();
+        *state.session.lock().await = None;
+        state.auth_notify.notify_one();
+    }
     state.reminder_notify.notify_one();
+    outcome
+}
+
+async fn publish_automatic_sync_failure(
+    app: &AppHandle,
+    state: &ManagedAppState,
+    error: crate::domain::AppError,
+    next_retry_at_millis: i64,
+) -> AutomaticSyncOutcome {
+    use crate::domain::{SyncRunView, SyncState};
+
+    let retryable = error.is_retryable_sync_error();
+    let auth_expired = matches!(&error, crate::domain::AppError::Auth(_));
+    if auth_expired {
+        let _ = state.credentials.clear();
+        *state.session.lock().await = None;
+        state.auth_notify.notify_one();
+    }
+    let mut runtime = state.inner.lock().await;
+    let before = runtime.snapshot.clone();
+    if auth_expired {
+        runtime.snapshot.auth = state.cloud.auth_view(None);
+    }
+    runtime.snapshot.sync = SyncRunView {
+        state: if matches!(&error, crate::domain::AppError::ServerUpdateRequired(_)) {
+            SyncState::ServerUpdateRequired
+        } else {
+            SyncState::Error
+        },
+        message: Some(error.to_string()),
+        issue_code: Some(error.sync_issue_code()),
+        next_retry_at_millis: retryable.then_some(next_retry_at_millis),
+        insecure_http: true,
+        ..runtime.snapshot.sync.clone()
+    };
+    if runtime.snapshot != before {
+        runtime.snapshot.revision += 1;
+        let _ = runtime.repository.save_snapshot(&runtime.snapshot).await;
+        let result = MutationResult {
+            revision: runtime.snapshot.revision,
+            changed_ids: vec!["sync".to_owned()],
+            snapshot_delta: SnapshotDelta::between(&before, &runtime.snapshot),
+        };
+        let _ = app.emit("snapshot://delta", result);
+        let _ = app.emit("sync://state", runtime.snapshot.sync.clone());
+    }
+    if retryable {
+        AutomaticSyncOutcome::Retry
+    } else {
+        AutomaticSyncOutcome::Complete
+    }
 }
 
 pub async fn reconcile_system_reminders(app: &AppHandle) {

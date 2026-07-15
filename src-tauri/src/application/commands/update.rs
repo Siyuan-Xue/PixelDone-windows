@@ -10,7 +10,10 @@ use tauri::{Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::{
-    application::{commands::mutate, state::ManagedAppState},
+    application::{
+        commands::{ensure_revision, mutate},
+        state::ManagedAppState,
+    },
     domain::{AppError, MutationResult, SnapshotDelta, UpdateView, unix_now_millis},
 };
 
@@ -93,6 +96,7 @@ pub async fn check_for_update(
     state: State<'_, ManagedAppState>,
     expected_revision: i64,
 ) -> Result<MutationResult, AppError> {
+    ensure_revision(&state, expected_revision).await?;
     let now = unix_now_millis();
     let next = now + SUCCESS_INTERVAL_MILLIS;
     let mut view = perform_check(&app).await?;

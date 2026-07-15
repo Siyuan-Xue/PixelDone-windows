@@ -22,4 +22,72 @@ describe('Checklist parity', () => {
     expect(snapshot.checklists.some((list: any) => list.id === checklistId)).toBe(false);
     expect(snapshot.checklists.filter((list: any) => list.kind === 'NORMAL')).toHaveLength(1);
   });
+
+  it('silently reloads and retries one stale UI mutation without a red alert', async () => {
+    const initial = await bootstrap();
+    let checklistId: string | null = null;
+    try {
+      const created = await invoke('create_checklist', {
+        expectedRevision: initial.revision,
+        name: 'E2E STALE RETRY'
+      });
+      checklistId = created.changedIds[0];
+      await invoke('select_checklist', {
+        expectedRevision: created.revision,
+        checklistId: initial.selectedChecklistId
+      });
+      await browser.refresh();
+      await browser.execute(() => {
+        const scope = globalThis as typeof globalThis & {
+          __PIXELDONE_E2E_SELECT_CHECKLIST__?: (input: { expectedRevision: number; checklistId: string }) => Promise<unknown>;
+          __pixeldoneStaleCalls?: number;
+        };
+        scope.__pixeldoneStaleCalls = 0;
+        scope.__PIXELDONE_E2E_SELECT_CHECKLIST__ = async ({ expectedRevision, checklistId }) => {
+          scope.__pixeldoneStaleCalls = (scope.__pixeldoneStaleCalls ?? 0) + 1;
+          if (scope.__pixeldoneStaleCalls === 1) {
+            throw { code: 'STALE_REVISION', message: 'stale' };
+          }
+          return {
+            revision: expectedRevision + 1,
+            changedIds: [checklistId],
+            snapshotDelta: {
+              upsertedChecklists: [], removedChecklistIds: [], selectedChecklistId: checklistId,
+              sortMode: null, hideCompleted: null, quickDelete: null, showDeadlineCountdown: null,
+              checklistHistory: null, settings: null, auth: null, sync: null, reminder: null, update: null
+            }
+          };
+        };
+      });
+
+      const target = await $$('.list-nav .nav-row .nav-main').find(async (button) => (await button.getText()).includes('E2E STALE RETRY'));
+      if (!target) throw new Error('Stale retry checklist button missing');
+      await target.click();
+      await browser.waitUntil(async () => browser.execute(() => (globalThis as typeof globalThis & { __pixeldoneStaleCalls?: number }).__pixeldoneStaleCalls === 2));
+      await expect($('.workspace-status h2')).toHaveText('E2E STALE RETRY');
+      expect(await $('.operation-error').isExisting()).toBe(false);
+      expect(await browser.execute(() => (globalThis as typeof globalThis & { __pixeldoneStaleCalls?: number }).__pixeldoneStaleCalls)).toBe(2);
+    } finally {
+      await browser.execute(() => {
+        const scope = globalThis as typeof globalThis & {
+          __PIXELDONE_E2E_SELECT_CHECKLIST__?: unknown;
+          __pixeldoneStaleCalls?: unknown;
+        };
+        delete scope.__PIXELDONE_E2E_SELECT_CHECKLIST__;
+        delete scope.__pixeldoneStaleCalls;
+      });
+      let snapshot = await bootstrap();
+      if (checklistId && snapshot.checklists.some((list: any) => list.id === checklistId)) {
+        if (snapshot.selectedChecklistId === checklistId) {
+          await invoke('select_checklist', {
+            expectedRevision: snapshot.revision,
+            checklistId: initial.selectedChecklistId
+          });
+          snapshot = await bootstrap();
+        }
+        await invoke('delete_checklist', { expectedRevision: snapshot.revision, checklistId });
+      }
+      await browser.refresh();
+    }
+  });
 });

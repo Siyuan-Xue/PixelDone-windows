@@ -3,23 +3,29 @@
   import { listen } from '@tauri-apps/api/event';
   import { open } from '@tauri-apps/plugin-dialog';
   import AuthModal from '$lib/components/auth/AuthModal.svelte';
+  import PasswordModal from '$lib/components/auth/PasswordModal.svelte';
   import {
     authEmailForSubmission,
     validateAuthInput,
     type AuthMode,
     type AuthValidationError
   } from '$lib/components/auth/auth';
+  import {
+    validatePasswordChange,
+    type PasswordValidationError
+  } from '$lib/components/auth/password';
   import Icon from '$lib/components/common/Icon.svelte';
   import ScriptAwareText from '$lib/components/common/ScriptAwareText.svelte';
   import TodoDock from '$lib/components/shell/TodoDock.svelte';
   import TodoEditorModal from '$lib/components/shell/TodoEditorModal.svelte';
   import { reconcileEditorMode, type TodoEditorMode } from '$lib/components/shell/editor';
   import { localeFor, type MessageKey } from '$lib/generated/i18n';
-  import type { WindowsMessageKey } from '$lib/i18n/windows';
+  import type { WindowsMessageKey, WindowsReliabilityMessageKey } from '$lib/i18n/windows';
   import {
     uiMessage,
     uiText,
     uiWindowsAuthValidationMessage,
+    uiWindowsReliabilityMessage,
     uiWindowsMessage
   } from '$lib/i18n/presentation';
   import type {
@@ -46,10 +52,13 @@
     applyMutation,
     emptyDraft
   } from '$lib/ipc/client';
+  import { mutationDisposition } from '$lib/ipc/revision';
 
   let snapshot = $state<AppSnapshot>(null!);
   let loading = $state(true);
-  let errorMessage = $state('');
+  let launchErrorMessage = $state('');
+  let workspaceNotice = $state<{ tone: 'success' | 'warning' | 'error'; message: string } | null>(null);
+  let workspaceNoticeTimer: number | null = null;
   let selectedTodoId = $state<string | null>(null);
   let draft = $state<TodoDraft>(emptyDraft());
   let editorMode = $state<TodoEditorMode>({ kind: 'closed' });
@@ -70,11 +79,16 @@
   let authTrigger = $state<HTMLElement | null>(null);
   let authModalGeneration = 0;
   let authSubmissionId = 0;
-  let passwordEditorOpen = $state(false);
+  let passwordModalOpen = $state(false);
   let currentPassword = $state('');
   let newPassword = $state('');
   let confirmPassword = $state('');
   let passwordBusy = $state(false);
+  let passwordError = $state('');
+  let passwordErrorKind = $state<PasswordValidationError | null>(null);
+  let passwordTrigger = $state<HTMLElement | null>(null);
+  let passwordModalGeneration = 0;
+  let passwordSubmissionId = 0;
   let conflicts = $state<SyncConflictView[]>([]);
   let conflictOpen = $state(false);
   let previewData = $state<string | null>(null);
@@ -129,19 +143,21 @@
         storageInfo = await api.getStorageInfo();
         applyPresentationSettings();
         cleanups.push(await listen<MutationResult>('snapshot://delta', ({ payload }) => {
-          snapshot = applyMutation(snapshot, payload);
-          applyPresentationSettings();
+          void acceptMutation(payload);
         }));
         cleanups.push(await listen<{ downloadedBytes: number; totalBytes: number | null }>('update://progress', ({ payload }) => {
           updateProgress = payload;
         }));
       } catch (error) {
-        errorMessage = errorText(error);
+        launchErrorMessage = errorText(error);
       } finally {
         loading = false;
       }
     })();
-    return () => cleanups.forEach((cleanup) => cleanup());
+    return () => {
+      cleanups.forEach((cleanup) => cleanup());
+      if (workspaceNoticeTimer !== null) window.clearTimeout(workspaceNoticeTimer);
+    };
   });
 
   $effect(() => {
@@ -164,6 +180,10 @@
 
   function wt(key: WindowsMessageKey): string {
     return uiWindowsMessage(locale, key);
+  }
+
+  function rt(key: WindowsReliabilityMessageKey): string {
+    return uiWindowsReliabilityMessage(locale, key);
   }
 
   function languageTagFor(language: AppLanguage): string {
@@ -194,6 +214,15 @@
   }
 
   function syncDetailMessage(): string {
+    const issueKeys: Record<string, WindowsReliabilityMessageKey> = {
+      NETWORK_RETRYING: 'syncNetworkRetrying',
+      AUTH_EXPIRED: 'syncAuthExpired',
+      SERVER_UPDATE_REQUIRED: 'syncServerUpdateRequired',
+      LOCAL_STORAGE_ERROR: 'syncLocalStorageError',
+      REMOTE_DATA_INVALID: 'syncRemoteDataInvalid',
+      UNKNOWN: 'syncUnknown'
+    };
+    if (snapshot.sync.issueCode) return rt(issueKeys[snapshot.sync.issueCode] ?? 'syncUnknown');
     if (snapshot.sync.state === 'SIGNED_OUT') return wt('signInToSyncAndroid');
     return uiText(snapshot.sync.message ?? syncStateLabel());
   }
@@ -309,27 +338,121 @@
     return { XHIGH: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }[priority];
   }
 
-  async function commit(promise: Promise<MutationResult>): Promise<MutationResult | null> {
-    if (!snapshot) return null;
-    errorMessage = '';
-    try {
-      const result = await promise;
-      snapshot = applyMutation(snapshot, result);
-      applyPresentationSettings();
-      return result;
-    } catch (error) {
-      const appError = error as Partial<AppError>;
-      if (appError.code === 'STALE_REVISION') snapshot = await api.bootstrap();
-      errorMessage = errorText(error);
-      return null;
+  type MutationFactory = (revision: number) => Promise<MutationResult>;
+  type MutationSurface = 'workspace' | 'sync' | 'update' | 'notification' | 'silent';
+
+  function dismissWorkspaceNotice(): void {
+    if (workspaceNoticeTimer !== null) window.clearTimeout(workspaceNoticeTimer);
+    workspaceNoticeTimer = null;
+    workspaceNotice = null;
+  }
+
+  function showWorkspaceNotice(
+    tone: 'success' | 'warning' | 'error',
+    message: string,
+    autoDismiss = false
+  ): void {
+    dismissWorkspaceNotice();
+    workspaceNotice = { tone, message };
+    if (autoDismiss) {
+      workspaceNoticeTimer = window.setTimeout(() => {
+        workspaceNotice = null;
+        workspaceNoticeTimer = null;
+      }, 6_000);
     }
+  }
+
+  async function refreshSnapshot(): Promise<void> {
+    const latest = await api.bootstrap();
+    if (!snapshot || latest.revision >= snapshot.revision) snapshot = latest;
+    applyPresentationSettings();
+  }
+
+  async function acceptMutation(result: MutationResult): Promise<void> {
+    if (!snapshot) return;
+    const disposition = mutationDisposition(snapshot.revision, result.revision);
+    if (disposition === 'ignore') return;
+    if (disposition === 'reload') {
+      await refreshSnapshot();
+      return;
+    }
+    snapshot = applyMutation(snapshot, result);
+    applyPresentationSettings();
+  }
+
+  async function executeMutation(
+    factory: MutationFactory
+  ): Promise<{ result: MutationResult | null; error: unknown | null }> {
+    if (!snapshot) return { result: null, error: null };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await factory(snapshot.revision);
+        await acceptMutation(result);
+        return { result, error: null };
+      } catch (error) {
+        const appError = error as Partial<AppError>;
+        if (appError.code === 'STALE_REVISION') {
+          try {
+            await refreshSnapshot();
+          } catch (bootstrapError) {
+            return { result: null, error: bootstrapError };
+          }
+          if (attempt === 0) continue;
+          return {
+            result: null,
+            error: { code: 'STALE_REVISION_REPEATED', message: rt('staleRevisionAgain') }
+          };
+        }
+        if (appError.code === 'NOT_FOUND') {
+          try {
+            await refreshSnapshot();
+          } catch (bootstrapError) {
+            return { result: null, error: bootstrapError };
+          }
+        }
+        return { result: null, error };
+      }
+    }
+    return { result: null, error: null };
+  }
+
+  function mutationErrorText(error: unknown): string {
+    const code = (error as Partial<AppError> | null)?.code;
+    if (code === 'STALE_REVISION_REPEATED') return rt('staleRevisionAgain');
+    if (code === 'NOT_FOUND') return rt('targetChanged');
+    return errorText(error);
+  }
+
+  async function routeMutationError(error: unknown, surface: MutationSurface): Promise<void> {
+    const code = (error as Partial<AppError> | null)?.code;
+    if (surface === 'sync' || surface === 'update' || surface === 'notification') {
+      try {
+        await refreshSnapshot();
+      } catch (bootstrapError) {
+        showWorkspaceNotice('error', errorText(bootstrapError));
+      }
+      return;
+    }
+    if (surface === 'silent') return;
+    const fatal = ['DATABASE_ERROR', 'PLATFORM_ERROR', 'INITIALIZATION_ERROR'].includes(code ?? '');
+    showWorkspaceNotice(fatal ? 'error' : 'warning', mutationErrorText(error));
+  }
+
+  async function commit(
+    factory: MutationFactory,
+    surface: MutationSurface = 'workspace'
+  ): Promise<MutationResult | null> {
+    if (workspaceNotice?.tone !== 'success') dismissWorkspaceNotice();
+    const outcome = await executeMutation(factory);
+    if (outcome.error) await routeMutationError(outcome.error, surface);
+    return outcome.result;
   }
 
   async function chooseChecklist(id: string): Promise<void> {
     if (!snapshot || id === snapshot.selectedChecklistId) return;
     selectedTodoId = null;
     closeEditor(false);
-    await commit(api.selectChecklist(snapshot.revision, id));
+    await commit((revision) => api.selectChecklist(revision, id));
   }
 
   function chooseTodo(item: TodoItem, trigger?: HTMLElement): void {
@@ -360,13 +483,16 @@
 
   async function saveTodo(): Promise<void> {
     if (!snapshot || !selectedList) return;
-    const result = editorMode.kind === 'new'
-      ? await commit(api.createTodo(snapshot.revision, selectedList.id, { ...draft }))
-      : editorMode.kind === 'edit'
-        ? await commit(api.updateTodo(snapshot.revision, selectedList.id, editorMode.todoId, { ...draft }))
+    const listId = selectedList.id;
+    const mode = editorMode;
+    const submittedDraft = { ...draft };
+    const result = mode.kind === 'new'
+      ? await commit((revision) => api.createTodo(revision, listId, submittedDraft))
+      : mode.kind === 'edit'
+        ? await commit((revision) => api.updateTodo(revision, listId, mode.todoId, submittedDraft))
         : null;
     if (result) {
-      const todoId = result.changedIds.find((id) => id !== selectedList.id) ?? selectedTodoId;
+      const todoId = result.changedIds.find((id) => id !== listId) ?? selectedTodoId;
       highlight(todoId ?? null);
       closeEditor();
     }
@@ -384,7 +510,7 @@
     } else {
       highlight(item.id);
     }
-    await commit(api.toggleTodo(snapshot.revision, selectedList.id, item.id));
+    await commit((revision) => api.toggleTodo(revision, selectedList.id, item.id));
   }
 
   function highlight(todoId: string | null): void {
@@ -394,7 +520,7 @@
 
   async function moveSelectedToTrash(): Promise<void> {
     if (!snapshot || !selectedList || !selectedTodoId) return;
-    if (await commit(api.moveTodoToTrash(snapshot.revision, selectedList.id, selectedTodoId))) {
+    if (await commit((revision) => api.moveTodoToTrash(revision, selectedList.id, selectedTodoId!))) {
       closeEditor();
     }
   }
@@ -402,7 +528,7 @@
   async function submitNewList(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (!snapshot || !newListName.trim()) return;
-    if (await commit(api.createChecklist(snapshot.revision, newListName))) {
+    if (await commit((revision) => api.createChecklist(revision, newListName))) {
       newListName = '';
       creatingList = false;
     }
@@ -416,32 +542,44 @@
 
   async function saveListName(): Promise<void> {
     if (!snapshot || !editingListId) return;
-    if (await commit(api.renameChecklist(snapshot.revision, editingListId, listNameDraft))) editingListId = null;
+    if (await commit((revision) => api.renameChecklist(revision, editingListId!, listNameDraft))) editingListId = null;
   }
 
   async function deleteList(list: Checklist): Promise<void> {
     if (!snapshot || !confirm(`${t('delete_list_title')}: ${list.name}`)) return;
-    await commit(api.deleteChecklist(snapshot.revision, list.id));
+    await commit((revision) => api.deleteChecklist(revision, list.id));
   }
 
   async function toggleSort(): Promise<void> {
-    if (snapshot) await commit(api.setSortMode(snapshot.revision, snapshot.sortMode === 'PRIORITY' ? 'TIME' : 'PRIORITY'));
+    if (snapshot) {
+      const next = snapshot.sortMode === 'PRIORITY' ? 'TIME' : 'PRIORITY';
+      await commit((revision) => api.setSortMode(revision, next));
+    }
   }
   async function toggleHideDone(): Promise<void> {
-    if (snapshot) await commit(api.setHideCompleted(snapshot.revision, !snapshot.hideCompleted));
+    if (snapshot) {
+      const next = !snapshot.hideCompleted;
+      await commit((revision) => api.setHideCompleted(revision, next));
+    }
   }
   async function toggleQuickDelete(): Promise<void> {
-    if (snapshot) await commit(api.setQuickDelete(snapshot.revision, !snapshot.quickDelete));
+    if (snapshot) {
+      const next = !snapshot.quickDelete;
+      await commit((revision) => api.setQuickDelete(revision, next));
+    }
   }
   async function toggleDeadline(): Promise<void> {
-    if (snapshot) await commit(api.setDeadlineCountdown(snapshot.revision, !snapshot.showDeadlineCountdown));
+    if (snapshot) {
+      const next = !snapshot.showDeadlineCountdown;
+      await commit((revision) => api.setDeadlineCountdown(revision, next));
+    }
   }
   async function cleanCompleted(): Promise<void> {
-    if (snapshot && selectedList?.kind === 'NORMAL') await commit(api.cleanCompleted(snapshot.revision, selectedList.id));
+    if (snapshot && selectedList?.kind === 'NORMAL') await commit((revision) => api.cleanCompleted(revision, selectedList.id));
   }
 
   async function updateSettings(settings: AppSettings): Promise<void> {
-    if (snapshot) await commit(api.updateSettings(snapshot.revision, settings));
+    if (snapshot) await commit((revision) => api.updateSettings(revision, settings));
   }
 
   async function setLanguage(languageMode: AppLanguage): Promise<void> {
@@ -463,7 +601,7 @@
 
   async function trashAction(item: TodoItem, action: 'restore' | 'purge'): Promise<void> {
     if (!snapshot) return;
-    await commit(action === 'restore' ? api.restoreTodo(snapshot.revision, item.id) : api.purgeTodo(snapshot.revision, item.id));
+    await commit((revision) => action === 'restore' ? api.restoreTodo(revision, item.id) : api.purgeTodo(revision, item.id));
     selectedTodoId = null;
   }
 
@@ -531,21 +669,14 @@
     authError = '';
     authErrorKind = null;
     try {
-      const result = authMode === 'sign-in'
-        ? await api.signIn(snapshot.revision, email, authPassword)
-        : await api.signUp(snapshot.revision, email, authPassword);
-      snapshot = applyMutation(snapshot, result);
-      applyPresentationSettings();
-      authEmail = email;
-      if (authModalOpen && generation === authModalGeneration) closeAuthModal();
-    } catch (error) {
-      const appError = error as Partial<AppError>;
-      if (appError.code === 'STALE_REVISION') {
-        snapshot = await api.bootstrap();
-        applyPresentationSettings();
-      }
-      if (authModalOpen && generation === authModalGeneration) {
-        authError = errorText(error);
+      const outcome = await executeMutation((revision) => authMode === 'sign-in'
+        ? api.signIn(revision, email, authPassword)
+        : api.signUp(revision, email, authPassword));
+      if (outcome.result) {
+        authEmail = email;
+        if (authModalOpen && generation === authModalGeneration) closeAuthModal();
+      } else if (outcome.error && authModalOpen && generation === authModalGeneration) {
+        authError = mutationErrorText(outcome.error);
         authErrorKind = null;
       }
     } finally {
@@ -553,27 +684,93 @@
     }
   }
 
+  function openPasswordModal(trigger: HTMLElement): void {
+    passwordTrigger = trigger;
+    currentPassword = '';
+    newPassword = '';
+    confirmPassword = '';
+    passwordError = '';
+    passwordErrorKind = null;
+    passwordModalGeneration += 1;
+    passwordModalOpen = true;
+  }
+
+  function closePasswordModal(restoreFocus = true): void {
+    if (!passwordModalOpen) return;
+    const trigger = passwordTrigger;
+    passwordModalOpen = false;
+    passwordModalGeneration += 1;
+    currentPassword = '';
+    newPassword = '';
+    confirmPassword = '';
+    passwordError = '';
+    passwordErrorKind = null;
+    passwordTrigger = null;
+    if (restoreFocus) requestAnimationFrame(() => trigger?.focus());
+  }
+
+  function updatePasswordField(
+    field: 'current' | 'new' | 'confirmation',
+    value: string
+  ): void {
+    if (field === 'current') currentPassword = value;
+    else if (field === 'new') newPassword = value;
+    else confirmPassword = value;
+    passwordError = '';
+    passwordErrorKind = null;
+  }
+
+  function passwordValidationText(error: PasswordValidationError): string {
+    return rt(error === 'required' ? 'passwordFieldsRequired'
+      : error === 'password-short' ? 'passwordTooShort'
+        : error === 'same-password' ? 'passwordMustDiffer'
+          : 'passwordsDoNotMatch');
+  }
+
   async function changePassword(): Promise<void> {
     if (!snapshot || passwordBusy) return;
+    const validationError = validatePasswordChange(currentPassword, newPassword, confirmPassword);
+    if (validationError) {
+      passwordErrorKind = validationError;
+      passwordError = passwordValidationText(validationError);
+      return;
+    }
+    const generation = passwordModalGeneration;
+    const submissionId = ++passwordSubmissionId;
+    const submittedCurrent = currentPassword;
+    const submittedNew = newPassword;
+    const submittedConfirmation = confirmPassword;
     passwordBusy = true;
-    const result = await commit(api.changePassword(
-      snapshot.revision,
-      currentPassword,
-      newPassword,
-      confirmPassword
-    ));
-    passwordBusy = false;
-    if (result) {
-      currentPassword = '';
-      newPassword = '';
-      confirmPassword = '';
-      passwordEditorOpen = false;
+    passwordError = '';
+    passwordErrorKind = null;
+    try {
+      const outcome = await executeMutation((revision) => api.changePassword(
+        revision,
+        submittedCurrent,
+        submittedNew,
+        submittedConfirmation
+      ));
+      if (outcome.result) {
+        if (passwordModalOpen) closePasswordModal(false);
+        else {
+          currentPassword = '';
+          newPassword = '';
+          confirmPassword = '';
+        }
+        showWorkspaceNotice('success', rt('passwordChanged'), true);
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('.cloud-account .cloud-icon-button')?.focus());
+      } else if (outcome.error && passwordModalOpen && generation === passwordModalGeneration) {
+        passwordError = mutationErrorText(outcome.error);
+        passwordErrorKind = null;
+      }
+    } finally {
+      if (submissionId === passwordSubmissionId) passwordBusy = false;
     }
   }
 
   async function syncNow(): Promise<void> {
     if (!snapshot) return;
-    if (await commit(api.syncNow(snapshot.revision)) && snapshot.sync.conflictCount > 0) await openConflicts();
+    if (await commit((revision) => api.syncNow(revision), 'sync') && snapshot.sync.conflictCount > 0) await openConflicts();
   }
 
   async function openConflicts(): Promise<void> {
@@ -583,7 +780,7 @@
 
   async function resolveConflict(conflict: SyncConflictView, choice: ConflictResolutionChoice): Promise<void> {
     if (!snapshot) return;
-    if (await commit(api.resolveConflict(snapshot.revision, conflict.recordType, conflict.localId, choice))) {
+    if (await commit((revision) => api.resolveConflict(revision, conflict.recordType, conflict.localId, choice))) {
       conflicts = await api.loadConflicts();
       conflictOpen = conflicts.length > 0;
     }
@@ -597,7 +794,7 @@
       filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
     });
     if (typeof selected !== 'string') return;
-    if (await commit(api.attachImage(snapshot.revision, selectedList.id, selectedTodoId, selected))) {
+    if (await commit((revision) => api.attachImage(revision, selectedList.id, selectedTodoId!, selected))) {
       highlight(selectedTodoId);
       await showImagePreview(selectedTodoId);
     }
@@ -610,7 +807,7 @@
       previewX = 0;
       previewY = 0;
     } catch (error) {
-      errorMessage = errorText(error);
+      showWorkspaceNotice('error', errorText(error));
     }
   }
 
@@ -758,7 +955,7 @@
       beginNewTodo();
     } else if (event.altKey && event.key === 'ArrowLeft' && snapshot?.checklistHistory.length) {
       event.preventDefault();
-      void commit(api.backChecklist(snapshot.revision));
+      void commit((revision) => api.backChecklist(revision));
     }
   }
 </script>
@@ -790,7 +987,7 @@
             {:else}
               <button class="nav-main" onclick={() => void chooseChecklist(list.id)}>
                 <span class="nav-icon"><Icon name="list" /></span>
-                <span class="nav-name"><ScriptAwareText text={list.name} role="serif" /></span><span class="nav-count">{list.items.filter((item) => !item.completed).length}</span>
+                <span class="nav-name"><ScriptAwareText text={list.name} role="serif" /></span>
               </button>
             {/if}
             {#if editingListId !== list.id}
@@ -815,7 +1012,7 @@
       <footer class="sidebar-footer">
         <div class="cloud-state">
           <button class="sidebar-account-button" aria-label={t('account')} onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}><Icon name="cloud" /><span><strong>{syncStateLabel()}</strong>{snapshot.auth.userEmail ?? t('signed_out')}</span></button>
-          {#if snapshot.auth.signedIn}<button class="sidebar-signout" title={t('sign_out')} aria-label={t('sign_out')} onclick={() => void commit(api.signOut(snapshot.revision))}><Icon name="logout" size={20} /></button>{/if}
+          {#if snapshot.auth.signedIn}<button class="sidebar-signout" title={t('sign_out')} aria-label={t('sign_out')} onclick={() => void commit((revision) => api.signOut(revision))}><Icon name="logout" size={20} /></button>{/if}
         </div>
       </footer>
       <div
@@ -834,7 +1031,7 @@
       <header class="workspace-header workspace-status">
         <div class="title-stack status-title">
           <div class="title-line">
-            {#if snapshot.checklistHistory.length}<button class="icon-button" title="Alt+Left" onclick={() => void commit(api.backChecklist(snapshot.revision))}><Icon name="back" /></button>{/if}
+            {#if snapshot.checklistHistory.length}<button class="icon-button" title="Alt+Left" onclick={() => void commit((revision) => api.backChecklist(revision))}><Icon name="back" /></button>{/if}
             <h2 dir="auto"><ScriptAwareText text={checklistDisplayName(selectedList)} role="serif" /></h2>
             {#if selectedList.kind === 'NORMAL'}<span class="status-counts"><span class="status-count">{wt('active')} {selectedList.items.filter((item) => !item.completed).length}</span><span class="status-count">{wt('done')} {selectedList.items.filter((item) => item.completed).length}</span></span>{/if}
           </div>
@@ -850,10 +1047,10 @@
         <div class="workspace-alert"><strong>{wt('alarmRinging')}</strong><button class="quiet-button" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{t('options')}</button></div>
       {/if}
 
-      {#if errorMessage}
-        <div class="workspace-alert operation-error" role="alert" aria-live="assertive">
-          <span>{errorMessage}</span>
-          <button class="icon-button" type="button" aria-label={t('close')} onclick={() => (errorMessage = '')}><Icon name="close" /></button>
+      {#if workspaceNotice}
+        <div class="workspace-alert operation-notice {workspaceNotice.tone}" class:operation-error={workspaceNotice.tone === 'error'} role={workspaceNotice.tone === 'error' ? 'alert' : 'status'} aria-live={workspaceNotice.tone === 'error' ? 'assertive' : 'polite'}>
+          <span>{workspaceNotice.message}</span>
+          <button class="icon-button" type="button" aria-label={t('close')} onclick={dismissWorkspaceNotice}><Icon name="close" /></button>
         </div>
       {/if}
 
@@ -901,7 +1098,7 @@
           {#if selectedList.items.length === 0}
             <div class="empty-state"><span class="empty-glyph">×</span><h3>{t('trash_empty')}</h3><p>{t('trash_retention')}</p></div>
           {:else}
-            <div class="trash-toolbar"><button class="danger-button" onclick={() => void commit(api.purgeAllTrash(snapshot.revision))}>{t('delete_all')}</button></div>
+            <div class="trash-toolbar"><button class="danger-button" onclick={() => void commit((revision) => api.purgeAllTrash(revision))}>{t('delete_all')}</button></div>
             {#each selectedList.items as item (item.id)}
               <article class="task-row trash-row"><div class="task-copy"><strong dir="auto"><ScriptAwareText text={item.title} /></strong><span>{t('from_list')} <ScriptAwareText text={item.trashedFromChecklistName ?? 'MAIN'} role="serif" /></span></div><button class="quiet-button" onclick={() => void trashAction(item, 'restore')}>{t('restore_task')}</button><button class="danger-button" onclick={() => void trashAction(item, 'purge')}>{t('delete')}</button></article>
             {/each}
@@ -916,8 +1113,7 @@
               <div><strong>{t('account')}</strong><p>{snapshot.auth.userEmail ?? t('signed_out')}</p></div>
               <div class="cloud-actions">
                 {#if snapshot.auth.signedIn}
-                  <button class="cloud-icon-button" title={t('sign_out')} onclick={() => void commit(api.signOut(snapshot.revision))}><Icon name="logout" size={22} /></button>
-                  <button class="cloud-icon-button" title={t('sync_now')} onclick={() => void syncNow()}><Icon name="sync" size={22} /></button>
+                  <button class="cloud-icon-button" title={t('sign_out')} onclick={() => void commit((revision) => api.signOut(revision))}><Icon name="logout" size={22} /></button>
                 {:else}
                   <button
                     class="cloud-icon-button"
@@ -934,18 +1130,10 @@
             {#if snapshot.auth.signedIn}
               <div class="setting-row">
                 <div><strong>{wt('changePassword')}</strong><p>{snapshot.auth.userEmail}</p></div>
-                <button class="setting-icon-button" title={wt('changePassword')} aria-label={wt('changePassword')} onclick={() => (passwordEditorOpen = !passwordEditorOpen)}><Icon name="key" size={20} /></button>
+                <button class="setting-icon-button password-modal-trigger" title={wt('changePassword')} aria-label={wt('changePassword')} aria-haspopup="dialog" aria-expanded={passwordModalOpen} disabled={passwordBusy} onclick={(event) => openPasswordModal(event.currentTarget)}><Icon name="key" size={20} /></button>
               </div>
-              {#if passwordEditorOpen}
-                <form class="password-form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
-                  <input type="password" autocomplete="current-password" placeholder={wt('currentPassword')} bind:value={currentPassword} />
-                  <input type="password" autocomplete="new-password" placeholder={wt('newPassword')} bind:value={newPassword} />
-                  <input type="password" autocomplete="new-password" placeholder={wt('confirmPassword')} bind:value={confirmPassword} />
-                  <div class="auth-buttons"><button class="setting-icon-button primary" type="submit" title={passwordBusy ? wt('changingPassword') : wt('changePassword')} aria-label={passwordBusy ? wt('changingPassword') : wt('changePassword')} disabled={passwordBusy}><Icon name="key" size={20} /></button></div>
-                </form>
-              {/if}
             {/if}
-            <div class="setting-row"><div><strong>{t('sync')}</strong><p data-testid="sync-detail">{syncDetailMessage()}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.sync.conflictCount}<button class="setting-icon-button primary" title={`${t('review')} ${snapshot.sync.conflictCount}`} aria-label={`${t('review')} ${snapshot.sync.conflictCount}`} onclick={() => void openConflicts()}><Icon name="conflict" size={20} /></button>{/if}</div></div>
+            <div class="setting-row sync-setting-row"><div><strong>{t('sync')}</strong><p data-testid="sync-detail">{syncDetailMessage()}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.auth.signedIn}<button class="setting-icon-button sync-now-button" title={t('sync_now')} aria-label={t('sync_now')} aria-busy={snapshot.sync.state === 'SYNCING'} disabled={snapshot.sync.state === 'SYNCING'} onclick={() => void syncNow()}><Icon name="sync" size={20} /></button>{/if}{#if snapshot.sync.conflictCount}<button class="setting-icon-button primary" title={`${t('review')} ${snapshot.sync.conflictCount}`} aria-label={`${t('review')} ${snapshot.sync.conflictCount}`} onclick={() => void openConflicts()}><Icon name="conflict" size={20} /></button>{/if}</div></div>
           </section>
 
           <section>
@@ -969,7 +1157,7 @@
           <section>
             <span class="section-title">{t('settings_updates')}</span>
             <div class="setting-row"><div><strong>{wt('automaticUpdateChecks')}</strong><p>{wt('automaticUpdateChecksDetail')}</p></div><button aria-label={wt('automaticUpdateChecks')} class:active={snapshot.settings.automaticUpdateCheckEnabled} class="switch" onclick={() => void updateSettings({ ...snapshot.settings, automaticUpdateCheckEnabled: !snapshot.settings.automaticUpdateCheckEnabled })}><span></span></button></div>
-            <div class="setting-row"><div><strong>{wt('currentVersion')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS{#if snapshot.update.message} · {uiText(snapshot.update.message)}{/if}</p></div><button class="setting-icon-button" title={t('check_update')} aria-label={t('check_update')} onclick={() => void commit(api.checkForUpdate(snapshot.revision))}><Icon name="update" size={20} /></button></div>
+            <div class="setting-row"><div><strong>{wt('currentVersion')}</strong><p>{snapshot.update.currentVersion} · FORMAL · x64 NSIS{#if snapshot.update.message} · {uiText(snapshot.update.message)}{/if}</p></div><button class="setting-icon-button" title={t('check_update')} aria-label={t('check_update')} onclick={() => void commit((revision) => api.checkForUpdate(revision), 'update')}><Icon name="update" size={20} /></button></div>
             {#if snapshot.update.state === 'AVAILABLE'}<button class="setting-icon-button primary section-action" title={`${t('install_updates')} ${snapshot.update.availableVersion}`} aria-label={`${t('install_updates')} ${snapshot.update.availableVersion}`} onclick={() => { updateProgress = { downloadedBytes: 0, totalBytes: null }; void api.installUpdate(); }}><Icon name="download" size={20} /></button>{/if}
             {#if updateProgress}<p class="update-progress">{wt('downloading')} {formatBytes(updateProgress.downloadedBytes)}{#if updateProgress.totalBytes} / {formatBytes(updateProgress.totalBytes)}{/if}</p>{/if}
           </section>
@@ -1016,6 +1204,23 @@
     />
   {/if}
 
+  {#if passwordModalOpen && snapshot.auth.signedIn}
+    <PasswordModal
+      {locale}
+      {currentPassword}
+      {newPassword}
+      confirmation={confirmPassword}
+      busy={passwordBusy}
+      error={passwordError}
+      errorKind={passwordErrorKind}
+      onCurrentPasswordChange={(value) => updatePasswordField('current', value)}
+      onNewPasswordChange={(value) => updatePasswordField('new', value)}
+      onConfirmationChange={(value) => updatePasswordField('confirmation', value)}
+      onSubmit={changePassword}
+      onClose={closePasswordModal}
+    />
+  {/if}
+
   {#if selectedList.kind === 'NORMAL' && editorMode.kind !== 'closed'}
     <TodoEditorModal
       mode={editorMode}
@@ -1027,7 +1232,7 @@
       onClose={closeEditor}
       onChooseImage={chooseImage}
       onPreviewImage={() => selectedTodo ? showImagePreview(selectedTodo.id) : undefined}
-      onRemoveImage={async () => { if (selectedTodo) await commit(api.deleteImage(snapshot.revision, selectedList.id, selectedTodo.id)); }}
+      onRemoveImage={async () => { if (selectedTodo) await commit((revision) => api.deleteImage(revision, selectedList.id, selectedTodo.id)); }}
       onDelete={moveSelectedToTrash}
     />
   {/if}
@@ -1060,5 +1265,5 @@
     </div>
   {/if}
 {:else}
-  <main class="launch-state error"><span class="launch-mark">!</span><p>{errorMessage || 'PixelDone'}</p></main>
+  <main class="launch-state error"><span class="launch-mark">!</span><p>{launchErrorMessage || 'PixelDone'}</p></main>
 {/if}
