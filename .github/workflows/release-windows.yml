@@ -142,6 +142,10 @@ jobs:
         env:
           VERSION: ${{ needs.resolve_release.outputs.version }}
           INSTALLER: ${{ needs.resolve_release.outputs.installer }}
+          PIXELDONE_SUPABASE_URL: ${{ secrets.PIXELDONE_SUPABASE_URL }}
+          PIXELDONE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PIXELDONE_SUPABASE_PUBLISHABLE_KEY }}
+          PIXELDONE_REQUIRE_CLOUD_CONFIG: true
+          PIXELDONE_ALLOW_INSECURE_HTTP: true
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --test release_integrity formal_nsis_signature_matches_embedded_public_key -- --ignored
           if ($LASTEXITCODE -ne 0) { throw 'Updater signature verification failed.' }
