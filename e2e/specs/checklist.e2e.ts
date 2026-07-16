@@ -1,6 +1,51 @@
 import { bootstrap, invoke } from '../helpers';
 
 describe('Checklist parity', () => {
+  it('requires an in-app confirmation before deleting a checklist', async () => {
+    let checklistId: string | null = null;
+    try {
+      let snapshot = await bootstrap();
+      const created = await invoke('create_checklist', {
+        expectedRevision: snapshot.revision,
+        name: 'E2E DELETE CONFIRM'
+      });
+      checklistId = created.changedIds[0];
+      await browser.refresh();
+
+      const findRow = async () => {
+        const rows = await $$('.list-nav .nav-row');
+        return rows.find(async (row) => (await row.getText()).includes('E2E DELETE CONFIRM'));
+      };
+      const firstRow = await findRow();
+      if (!firstRow) throw new Error('Delete confirmation checklist row missing');
+      await firstRow.$('.row-delete').click();
+
+      await expect($('.delete-checklist-modal')).toBeDisplayed();
+      await expect($('.delete-checklist-name')).toHaveText('E2E DELETE CONFIRM');
+      await expect($('.delete-checklist-actions .quiet-button')).toBeFocused();
+      await browser.keys(['Escape']);
+      await expect($('.delete-checklist-modal')).not.toBeExisting();
+      snapshot = await bootstrap();
+      expect(snapshot.checklists.some((list: any) => list.id === checklistId)).toBe(true);
+
+      const secondRow = await findRow();
+      if (!secondRow) throw new Error('Checklist disappeared before confirmation');
+      await secondRow.$('.row-delete').click();
+      await $('.delete-checklist-confirm').click();
+      await browser.waitUntil(async () => !(await $('.delete-checklist-modal').isExisting()));
+      snapshot = await bootstrap();
+      expect(snapshot.checklists.some((list: any) => list.id === checklistId)).toBe(false);
+      checklistId = null;
+    } finally {
+      if (await $('.delete-checklist-modal').isExisting()) await browser.keys(['Escape']);
+      const snapshot = await bootstrap();
+      if (checklistId && snapshot.checklists.some((list: any) => list.id === checklistId)) {
+        await invoke('delete_checklist', { expectedRevision: snapshot.revision, checklistId });
+      }
+      await browser.refresh();
+    }
+  });
+
   it('creates, renames and deletes a normal checklist with revision protection', async () => {
     let snapshot = await bootstrap();
     const created = await invoke('create_checklist', { expectedRevision: snapshot.revision, name: 'E2E LIST' });

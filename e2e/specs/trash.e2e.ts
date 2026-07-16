@@ -16,7 +16,9 @@ describe('Trash parity', () => {
     const deleted = await invoke('delete_checklist', { expectedRevision: trashed.revision, checklistId });
     await invoke('restore_todo', { expectedRevision: deleted.revision, todoId });
     snapshot = await bootstrap();
-    const restored = snapshot.checklists.find((list: any) => list.id === checklistId);
+    const restored = snapshot.checklists.find((list: any) => list.name === 'RESTORE SOURCE');
+    expect(snapshot.checklists.some((list: any) => list.id === checklistId)).toBe(false);
+    expect(restored?.id).not.toBe(checklistId);
     expect(restored?.name).toBe('RESTORE SOURCE');
     expect(restored?.items.some((item: any) => item.id === todoId)).toBe(true);
   });

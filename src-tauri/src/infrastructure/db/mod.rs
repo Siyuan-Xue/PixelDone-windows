@@ -572,6 +572,9 @@ impl SqliteRepository {
 
         let mut transaction = self.pool.begin().await?;
         for (id, list) in &after_lists {
+            if !before_lists.contains_key(id) {
+                delete_tombstone(&mut transaction, "checklist", id).await?;
+            }
             if before_lists
                 .get(id)
                 .is_none_or(|before| checklist_sync_metadata_changed(before, list))
@@ -580,6 +583,9 @@ impl SqliteRepository {
             }
         }
         for (id, item) in &after_items {
+            if !before_items.contains_key(id) {
+                delete_tombstone(&mut transaction, "item", id).await?;
+            }
             if before_items.get(id).copied() != Some(*item) {
                 mark_dirty(&mut transaction, "item", id).await?;
             }
@@ -950,6 +956,19 @@ async fn mark_dirty(
     local_id: &str,
 ) -> Result<(), AppError> {
     sqlx::query("INSERT OR IGNORE INTO sync_dirty_records (record_type, local_id) VALUES (?, ?)")
+        .bind(record_type)
+        .bind(local_id)
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
+async fn delete_tombstone(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    record_type: &str,
+    local_id: &str,
+) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM sync_tombstones WHERE record_type = ? AND local_id = ?")
         .bind(record_type)
         .bind(local_id)
         .execute(&mut **transaction)

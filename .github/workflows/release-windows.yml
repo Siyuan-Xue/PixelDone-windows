@@ -2,29 +2,115 @@ name: Release Windows x64
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing strict vX.Y.Z tag to publish or recover
+        required: true
+        type: string
+      mirror_existing:
+        description: Recover Gitee from the existing immutable GitHub Release
+        required: true
+        default: false
+        type: boolean
   push:
     tags: ['v*']
 
+concurrency:
+  group: windows-release-${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  parity-gate:
+  resolve_release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+      installer: ${{ steps.release.outputs.installer }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: release
+        name: Resolve immutable release identity
+        shell: pwsh
+        env:
+          DISPATCH_TAG: ${{ inputs.release_tag }}
+        run: |
+          $tag = if ($env:GITHUB_EVENT_NAME -eq 'push') { $env:GITHUB_REF_NAME } else { $env:DISPATCH_TAG }
+          if ($tag -notmatch '^v(\d+)\.(\d+)\.(\d+)$') { throw "Release tag must be strict vX.Y.Z: $tag" }
+          $version = $tag.Substring(1)
+          git fetch origin main --tags --force
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch main and tags.' }
+          $commit = (git rev-list -n 1 $tag).Trim()
+          if (-not $commit) { throw "Tag $tag does not exist." }
+          git merge-base --is-ancestor $commit origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Tag $tag is not reachable from main." }
+          git checkout --detach $commit
+          $packageVersion = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $cargo = Get-Content -Raw src-tauri/Cargo.toml
+          if ($packageVersion -ne $version -or $tauriVersion -ne $version -or $cargo -notmatch "(?m)^version = `"$([regex]::Escape($version))`"$") {
+            throw "Tag, package, Tauri and Cargo versions must all equal $version."
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+          "installer=PixelDone_${version}_x64-setup.exe" >> $env:GITHUB_OUTPUT
+
+  quality_gate:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.mirror_existing) }}
+    needs: resolve_release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_release.outputs.commit }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.1
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - run: bun install --frozen-lockfile
-      - run: bun run parity:check
+      - name: Export required cloud build configuration
+        shell: pwsh
+        env:
+          PIXELDONE_SUPABASE_URL: ${{ secrets.PIXELDONE_SUPABASE_URL }}
+          PIXELDONE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PIXELDONE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if (-not $env:PIXELDONE_SUPABASE_URL -or -not $env:PIXELDONE_SUPABASE_PUBLISHABLE_KEY) { throw 'Missing Supabase build configuration.' }
+          "PIXELDONE_SUPABASE_URL=$env:PIXELDONE_SUPABASE_URL" >> $env:GITHUB_ENV
+          "PIXELDONE_SUPABASE_PUBLISHABLE_KEY=$env:PIXELDONE_SUPABASE_PUBLISHABLE_KEY" >> $env:GITHUB_ENV
+          "PIXELDONE_REQUIRE_CLOUD_CONFIG=true" >> $env:GITHUB_ENV
+          "PIXELDONE_ALLOW_INSECURE_HTTP=true" >> $env:GITHUB_ENV
+      - run: bun run check
       - run: bun run test
+      - run: bun run build
+      - run: bun run parity:check
+      - run: cargo fmt --check
+        working-directory: src-tauri
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+      - run: cargo test
+        working-directory: src-tauri
 
-  release:
-    needs: parity-gate
+  build_release:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.mirror_existing) }}
+    needs: [resolve_release, quality_gate]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_release.outputs.commit }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -36,33 +122,130 @@ jobs:
         with:
           workspaces: src-tauri
       - run: bun install --frozen-lockfile
-      - name: Require signing material
+      - name: Build the signed NSIS release once
         shell: pwsh
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Missing Tauri updater signing key' }
-      - uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           PIXELDONE_SUPABASE_URL: ${{ secrets.PIXELDONE_SUPABASE_URL }}
           PIXELDONE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PIXELDONE_SUPABASE_PUBLISHABLE_KEY }}
           PIXELDONE_REQUIRE_CLOUD_CONFIG: true
           PIXELDONE_ALLOW_INSECURE_HTTP: true
-        with:
-          tagName: v__VERSION__
-          releaseName: PixelDone v__VERSION__
-          releaseDraft: false
-          prerelease: false
-          args: --bundles nsis --target x86_64-pc-windows-msvc
-      - name: Finalize release metadata
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Missing Tauri updater signing key.' }
+          bun run tauri build --bundles nsis --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Tauri release build failed.' }
+          bun run release:manifest
+          if ($LASTEXITCODE -ne 0) { throw 'Release manifest generation failed.' }
+      - name: Verify signature, checksum and manifests
         shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.resolve_release.outputs.version }}
+          INSTALLER: ${{ needs.resolve_release.outputs.installer }}
         run: |
-          bun run release:manifest
+          cargo test --manifest-path src-tauri/Cargo.toml --test release_integrity formal_nsis_signature_matches_embedded_public_key -- --ignored
+          if ($LASTEXITCODE -ne 0) { throw 'Updater signature verification failed.' }
           $directory = 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis'
-          gh release edit $env:GITHUB_REF_NAME --notes-file RELEASE_NOTES.md
-          gh release upload $env:GITHUB_REF_NAME "$directory/PixelDone_3.2.6_x64-setup.exe.sha256" "$directory/latest.json" --clobber
+          $installerPath = Join-Path $directory $env:INSTALLER
+          $checksumPath = "$installerPath.sha256"
+          $checksum = (Get-Content -Raw $checksumPath).Trim()
+          if ($checksum -notmatch '^([0-9A-F]{64})\s+(\S+)$' -or $Matches[2] -ne $env:INSTALLER) { throw 'Invalid checksum sidecar.' }
+          if ((Get-FileHash -Algorithm SHA256 $installerPath).Hash -ne $Matches[1]) { throw 'Installer checksum mismatch.' }
+          $signature = (Get-Content -Raw "$installerPath.sig").Trim()
+          foreach ($manifestName in @('latest.json', 'latest-gitee.json')) {
+            $manifest = Get-Content -Raw (Join-Path $directory $manifestName) | ConvertFrom-Json
+            if ($manifest.version -ne $env:VERSION) { throw "$manifestName version mismatch." }
+            $platform = $manifest.platforms.'windows-x86_64'
+            if ($platform.signature -ne $signature -or $platform.url -notmatch "/v$([regex]::Escape($env:VERSION))/$([regex]::Escape($env:INSTALLER))$") {
+              throw "$manifestName signature or URL mismatch."
+            }
+          }
+          New-Item -ItemType Directory -Force release-artifacts | Out-Null
+          Copy-Item $installerPath, "$installerPath.sig", $checksumPath, "$directory/latest.json", "$directory/latest-gitee.json" release-artifacts
+          Copy-Item RELEASE_NOTES.md release-artifacts/release-notes.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pixeldone-windows-${{ needs.resolve_release.outputs.version }}
+          path: release-artifacts
+          if-no-files-found: error
+          retention-days: 7
+
+  publish_github:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.mirror_existing) }}
+    needs: [resolve_release, quality_gate, build_release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_release.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        with:
+          name: pixeldone-windows-${{ needs.resolve_release.outputs.version }}
+          path: release-artifacts
+      - name: Create or safely complete GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installer = '${{ needs.resolve_release.outputs.installer }}'
+          $assets = @("release-artifacts/$installer", "release-artifacts/$installer.sig", "release-artifacts/$installer.sha256", 'release-artifacts/latest.json', 'release-artifacts/latest-gitee.json')
+          ./.github/scripts/Publish-GitHubRelease.ps1 -Repository $env:GITHUB_REPOSITORY -Tag '${{ needs.resolve_release.outputs.tag }}' -ExpectedCommit '${{ needs.resolve_release.outputs.commit }}' -Title 'PixelDone ${{ needs.resolve_release.outputs.tag }}' -NotesPath release-artifacts/release-notes.md -AssetPaths $assets
+
+  mirror_gitee:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.mirror_existing) }}
+    needs: [resolve_release, quality_gate, build_release, publish_github]
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_release.outputs.commit }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: pixeldone-windows-${{ needs.resolve_release.outputs.version }}
+          path: release-artifacts
+      - name: Mirror identical artifacts to Gitee
+        shell: pwsh
+        env:
+          GITEE_ACCESS_TOKEN: ${{ secrets.GITEE_ACCESS_TOKEN }}
+        run: |
+          $installer = '${{ needs.resolve_release.outputs.installer }}'
+          $assets = @("release-artifacts/$installer.sha256", "release-artifacts/$installer.sig", 'release-artifacts/latest.json', 'release-artifacts/latest-gitee.json', "release-artifacts/$installer")
+          ./.github/scripts/Publish-GiteeRelease.ps1 -Owner milesxue -Repository pixel-done-windows -Tag '${{ needs.resolve_release.outputs.tag }}' -ExpectedCommit '${{ needs.resolve_release.outputs.commit }}' -Title 'PixelDone ${{ needs.resolve_release.outputs.tag }}' -NotesPath release-artifacts/release-notes.md -AssetPaths $assets
+
+  mirror_existing_gitee:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mirror_existing }}
+    needs: resolve_release
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download and verify the existing GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ needs.resolve_release.outputs.tag }}'
+          $installer = '${{ needs.resolve_release.outputs.installer }}'
+          New-Item -ItemType Directory -Force release-artifacts | Out-Null
+          foreach ($name in @($installer, "$installer.sig", "$installer.sha256", 'latest.json', 'latest-gitee.json')) {
+            gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $name --dir release-artifacts
+            if ($LASTEXITCODE -ne 0) { throw "Missing GitHub Release asset $name." }
+          }
+          $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json body,name,isDraft,isPrerelease | ConvertFrom-Json
+          if ($release.name -ne "PixelDone $tag" -or $release.isDraft -or $release.isPrerelease) { throw 'GitHub Release metadata mismatch.' }
+          [string]$release.body | Set-Content -Encoding utf8 release-artifacts/release-notes.md
+          $checksum = (Get-Content -Raw "release-artifacts/$installer.sha256").Trim()
+          if ($checksum -notmatch '^([0-9A-Fa-f]{64})\s+(\S+)$' -or $Matches[2] -ne $installer) { throw 'Invalid checksum sidecar.' }
+          if ((Get-FileHash -Algorithm SHA256 "release-artifacts/$installer").Hash -ne $Matches[1].ToUpperInvariant()) { throw 'Existing GitHub installer checksum mismatch.' }
+      - name: Recover the Gitee Release without rebuilding
+        shell: pwsh
+        env:
+          GITEE_ACCESS_TOKEN: ${{ secrets.GITEE_ACCESS_TOKEN }}
+        run: |
+          $installer = '${{ needs.resolve_release.outputs.installer }}'
+          $assets = @("release-artifacts/$installer.sha256", "release-artifacts/$installer.sig", 'release-artifacts/latest.json', 'release-artifacts/latest-gitee.json', "release-artifacts/$installer")
+          ./.github/scripts/Publish-GiteeRelease.ps1 -Owner milesxue -Repository pixel-done-windows -Tag '${{ needs.resolve_release.outputs.tag }}' -ExpectedCommit '${{ needs.resolve_release.outputs.commit }}' -Title 'PixelDone ${{ needs.resolve_release.outputs.tag }}' -NotesPath release-artifacts/release-notes.md -AssetPaths $assets

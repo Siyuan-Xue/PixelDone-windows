@@ -7,7 +7,7 @@ fn formal_config_uses_professional_identity_and_protocol() {
     let config: serde_json::Value =
         serde_json::from_str(&fs::read_to_string("tauri.conf.json").unwrap()).unwrap();
     assert_eq!(config["productName"], "PixelDone");
-    assert_eq!(config["version"], "3.2.6");
+    assert_eq!(config["version"], "3.2.7");
     assert_eq!(config["mainBinaryName"], "PixelDone");
     assert_eq!(
         config["plugins"]["deep-link"]["desktop"]["schemes"][0],
@@ -49,7 +49,13 @@ fn windows_icon_source_is_transparent_and_preserves_android_subject() {
 fn formal_release_matches_the_3_1_0_unsigned_publisher_policy() {
     let workflow = fs::read_to_string("../.github/workflows/release-windows.yml").unwrap();
     assert!(workflow.contains("TAURI_SIGNING_PRIVATE_KEY"));
-    assert!(workflow.contains("args: --bundles nsis --target x86_64-pc-windows-msvc"));
+    assert!(
+        workflow.contains("bun run tauri build --bundles nsis --target x86_64-pc-windows-msvc")
+    );
+    assert!(workflow.contains("Publish-GiteeRelease.ps1"));
+    assert!(workflow.contains("GITEE_ACCESS_TOKEN"));
+    assert!(workflow.contains("latest-gitee.json"));
+    assert!(!workflow.contains("--clobber"));
     assert!(!workflow.contains("--config"));
     assert!(!workflow.contains("WINDOWS_CERTIFICATE_BASE64"));
     assert!(!workflow.contains("certificateThumbprint"));
@@ -81,7 +87,7 @@ fn sqlite_migrations_use_the_deployed_windows_line_endings() {
     let attributes = fs::read_to_string("../.gitattributes").unwrap();
     assert!(attributes.contains("src-tauri/migrations/*.sql text eol=crlf"));
     assert!(attributes.contains("src-tauri/migrations/0007_attachment_sync.sql text eol=lf"));
-    for version in (1..=6).chain(std::iter::once(8)) {
+    for version in (1..=6).chain([8, 9, 10]) {
         let prefix = format!("{version:04}_");
         let migration = fs::read_dir("migrations")
             .unwrap()

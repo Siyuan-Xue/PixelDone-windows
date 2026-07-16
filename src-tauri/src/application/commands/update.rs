@@ -6,8 +6,9 @@ use std::{
     time::Duration,
 };
 
+use semver::Version;
 use tauri::{Emitter, Manager, State};
-use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::{
     application::{
@@ -15,6 +16,7 @@ use crate::{
         state::ManagedAppState,
     },
     domain::{AppError, MutationResult, SnapshotDelta, UpdateView, unix_now_millis},
+    infrastructure::update::resolve_gitee_manifest,
 };
 
 const SUCCESS_INTERVAL_MILLIS: i64 = 24 * 60 * 60 * 1_000;
@@ -25,6 +27,11 @@ const FAILURE_INTERVAL_MILLIS: i64 = 6 * 60 * 60 * 1_000;
 struct UpdateProgress {
     downloaded_bytes: u64,
     total_bytes: Option<u64>,
+}
+
+struct ResolvedUpdate {
+    update: Update,
+    source: &'static str,
 }
 
 pub fn start_automatic_update_checks(app: tauri::AppHandle) {
@@ -112,20 +119,35 @@ pub async fn check_for_update(
 }
 
 async fn perform_check(app: &tauri::AppHandle) -> Result<UpdateView, AppError> {
-    let update = app
+    let github = app
         .updater()
         .map_err(|error| AppError::Update(error.to_string()))?
         .check()
-        .await
-        .map_err(|error| AppError::Update(error.to_string()))?;
-    Ok(if let Some(update) = update {
+        .await;
+    let (resolved, checked_source) = match github {
+        Ok(Some(update)) => (
+            Some(ResolvedUpdate {
+                update,
+                source: "GitHub signed updater manifest",
+            }),
+            "GitHub signed updater manifest",
+        ),
+        Ok(None) => (None, "GitHub signed updater manifest"),
+        Err(_) => (
+            check_gitee(app, None).await?,
+            "Gitee signed updater manifest",
+        ),
+    };
+    Ok(if let Some(resolved) = resolved {
         UpdateView {
             state: "AVAILABLE".to_owned(),
             current_version: env!("CARGO_PKG_VERSION").to_owned(),
-            available_version: Some(update.version.to_string()),
-            source: Some("GitHub / Gitee signed updater manifest".to_owned()),
+            available_version: Some(resolved.update.version.to_string()),
+            download_url: Some(resolved.update.download_url.to_string()),
+            source: Some(resolved.source.to_owned()),
             message: Some(
-                update
+                resolved
+                    .update
                     .body
                     .unwrap_or_else(|| "A new version is available".to_owned()),
             ),
@@ -135,7 +157,7 @@ async fn perform_check(app: &tauri::AppHandle) -> Result<UpdateView, AppError> {
         UpdateView {
             state: "CURRENT".to_owned(),
             current_version: env!("CARGO_PKG_VERSION").to_owned(),
-            source: Some("GitHub / Gitee signed updater manifest".to_owned()),
+            source: Some(checked_source.to_owned()),
             message: Some("PixelDone is up to date".to_owned()),
             ..UpdateView::default()
         }
@@ -144,13 +166,70 @@ async fn perform_check(app: &tauri::AppHandle) -> Result<UpdateView, AppError> {
 
 #[tauri::command]
 pub async fn download_and_install_update(app: tauri::AppHandle) -> Result<(), AppError> {
-    let update = app
+    let github = app
         .updater()
         .map_err(|error| AppError::Update(error.to_string()))?
         .check()
-        .await
+        .await;
+    match github {
+        Ok(Some(update)) => {
+            let requested = Version::parse(&update.version)
+                .map_err(|error| AppError::Update(error.to_string()))?;
+            if install_update(&app, &update).await.is_ok() {
+                return Ok(());
+            }
+            let fallback = check_gitee(&app, Some(&requested)).await?.ok_or_else(|| {
+                AppError::Update("The matching Gitee update is unavailable".into())
+            })?;
+            install_update(&app, &fallback.update).await
+        }
+        Ok(None) => Err(AppError::Update(
+            "No update is available to install".to_owned(),
+        )),
+        Err(_) => {
+            let fallback = check_gitee(&app, None)
+                .await?
+                .ok_or_else(|| AppError::Update("No update is available to install".into()))?;
+            install_update(&app, &fallback.update).await
+        }
+    }
+}
+
+async fn check_gitee(
+    app: &tauri::AppHandle,
+    requested_version: Option<&Version>,
+) -> Result<Option<ResolvedUpdate>, AppError> {
+    let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
+        .map_err(|error| AppError::Update(error.to_string()))?;
+    let Some(manifest) = resolve_gitee_manifest(&current_version, requested_version).await? else {
+        return Ok(None);
+    };
+    let endpoint =
+        tauri::Url::parse(&manifest.url).map_err(|error| AppError::Update(error.to_string()))?;
+    let update = app
+        .updater_builder()
+        .endpoints(vec![endpoint])
         .map_err(|error| AppError::Update(error.to_string()))?
-        .ok_or_else(|| AppError::Update("No update is available to install".to_owned()))?;
+        .build()
+        .map_err(|error| AppError::Update(error.to_string()))?
+        .check()
+        .await
+        .map_err(|error| AppError::Update(error.to_string()))?;
+    let Some(update) = update else {
+        return Ok(None);
+    };
+    if Version::parse(&update.version).ok().as_ref() != Some(&manifest.version) {
+        return Err(AppError::Update(
+            "Gitee updater manifest version does not match its Release".into(),
+        ));
+    }
+    Ok(Some(ResolvedUpdate {
+        update,
+        source: "Gitee signed updater manifest",
+    }))
+}
+
+async fn install_update(app: &tauri::AppHandle, update: &Update) -> Result<(), AppError> {
     let downloaded = Arc::new(AtomicU64::new(0));
     let progress_downloaded = downloaded.clone();
     let progress_app = app.clone();

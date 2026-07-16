@@ -95,11 +95,26 @@ describe('PixelDone 3.1.3 desktop layout', () => {
     const metrics = await browser.execute(() => {
       const sidebar = document.querySelector<HTMLElement>('.sidebar-header');
       const workspace = document.querySelector<HTMLElement>('.workspace-status');
+      const sidebarRegion = document.querySelector<HTMLElement>('.sidebar');
+      const workspaceRegion = document.querySelector<HTMLElement>('.workspace');
       const addList = document.querySelector<HTMLElement>('.new-list-button');
+      const sidebarStyle = sidebar ? getComputedStyle(sidebar) : null;
+      const workspaceStyle = workspace ? getComputedStyle(workspace) : null;
+      const sidebarRegionStyle = sidebarRegion ? getComputedStyle(sidebarRegion) : null;
+      const workspaceRegionStyle = workspaceRegion ? getComputedStyle(workspaceRegion) : null;
       return {
         title: document.title,
         sidebarHeight: sidebar?.getBoundingClientRect().height ?? 0,
         workspaceHeight: workspace?.getBoundingClientRect().height ?? 0,
+        sidebarBottomBorder: sidebarStyle?.borderBottomWidth ?? '',
+        workspaceBottomBorder: workspaceStyle?.borderBottomWidth ?? '',
+        sidebarHeaderBackground: sidebarStyle?.backgroundColor ?? '',
+        sidebarBackground: sidebarRegionStyle?.backgroundColor ?? '',
+        workspaceHeaderBackground: workspaceStyle?.backgroundColor ?? '',
+        workspaceBackground: workspaceRegionStyle?.backgroundColor ?? '',
+        verticalDividerWidth:
+          Number.parseFloat(sidebarRegionStyle?.borderLeftWidth ?? '0') +
+          Number.parseFloat(sidebarRegionStyle?.borderRightWidth ?? '0'),
         eyebrowCount: document.querySelectorAll('.workspace-status .eyebrow, .sidebar .eyebrow').length,
         makerCount: document.querySelectorAll('.maker-line').length,
         syncChipCount: document.querySelectorAll('.workspace-status .sync-chip').length,
@@ -111,6 +126,11 @@ describe('PixelDone 3.1.3 desktop layout', () => {
     expect(metrics.title).toBe('PixelDone — CODEX & XUE');
     expect(metrics.sidebarHeight).toBe(64);
     expect(metrics.workspaceHeight).toBe(64);
+    expect(metrics.sidebarBottomBorder).toBe('0px');
+    expect(metrics.workspaceBottomBorder).toBe('0px');
+    expect(metrics.sidebarHeaderBackground).toBe(metrics.sidebarBackground);
+    expect(metrics.workspaceHeaderBackground).toBe(metrics.workspaceBackground);
+    expect(metrics.verticalDividerWidth).toBe(2);
     expect(metrics.eyebrowCount).toBe(0);
     expect(metrics.makerCount).toBe(0);
     expect(metrics.syncChipCount).toBe(0);
@@ -140,8 +160,10 @@ describe('PixelDone 3.1.3 desktop layout', () => {
         settings: { ...snapshot.settings, sidebarWidthPx: 999 }
       });
       await browser.refresh();
-      expect((await bootstrap()).settings.sidebarWidthPx).toBe(560);
-      expect(Math.round(await $('.sidebar').getSize('width'))).toBe(560);
+      expect((await bootstrap()).settings.sidebarWidthPx).toBe(720);
+      expect(Math.round(await $('.sidebar').getSize('width'))).toBe(
+        Math.min(720, (await browser.execute(() => innerWidth)) - 440)
+      );
 
       snapshot = await bootstrap();
       await invoke('update_settings', {
@@ -364,10 +386,29 @@ describe('PixelDone 3.1.3 desktop layout', () => {
         draft: { title: longTitle, priority: 'MEDIUM', dueAtMillis: 0, reminderRepeat: 'NONE' }
       });
       todoId = createdTodo.changedIds.find((id: string) => id !== checklistId) ?? null;
+      await setCssViewport(1600, 900);
       await browser.refresh();
       const title = await $('.task-row .task-copy strong');
       await expect(title).toBeDisplayed();
       expect(await title.getText()).toBe(longTitle);
+      const widthMetrics = await browser.execute(() => {
+        const list = document.querySelector<HTMLElement>('.task-list');
+        const inner = document.querySelector<HTMLElement>('.task-list-inner');
+        const row = document.querySelector<HTMLElement>('.task-row');
+        if (!list || !inner || !row) return null;
+        const style = getComputedStyle(list);
+        return {
+          availableWidth:
+            list.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight),
+          innerWidth: inner.getBoundingClientRect().width,
+          rowWidth: row.getBoundingClientRect().width
+        };
+      });
+      expect(widthMetrics).not.toBeNull();
+      if (!widthMetrics) throw new Error('Task width metrics unavailable');
+      expect(widthMetrics.availableWidth).toBeGreaterThan(1040);
+      expect(Math.abs(widthMetrics.innerWidth - widthMetrics.availableWidth)).toBeLessThanOrEqual(1);
+      expect(Math.abs(widthMetrics.rowWidth - widthMetrics.availableWidth)).toBeLessThanOrEqual(1);
       expect(await browser.execute(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     } finally {
       let snapshot = await bootstrap();

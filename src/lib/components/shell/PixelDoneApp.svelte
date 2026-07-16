@@ -16,6 +16,7 @@
   } from '$lib/components/auth/password';
   import Icon from '$lib/components/common/Icon.svelte';
   import ScriptAwareText from '$lib/components/common/ScriptAwareText.svelte';
+  import DeleteChecklistModal from '$lib/components/shell/DeleteChecklistModal.svelte';
   import TodoDock from '$lib/components/shell/TodoDock.svelte';
   import TodoEditorModal from '$lib/components/shell/TodoEditorModal.svelte';
   import { reconcileEditorMode, type TodoEditorMode } from '$lib/components/shell/editor';
@@ -67,6 +68,9 @@
   let newListName = $state('');
   let editingListId = $state<string | null>(null);
   let listNameDraft = $state('');
+  let deleteChecklistTarget = $state<Checklist | null>(null);
+  let deleteChecklistTrigger = $state<HTMLElement | null>(null);
+  let deleteChecklistBusy = $state(false);
   let completionHold = $state<Record<string, boolean>>({});
   let highlightedTodoId = $state<string | null>(null);
   let authEmail = $state('');
@@ -91,6 +95,8 @@
   let passwordSubmissionId = 0;
   let conflicts = $state<SyncConflictView[]>([]);
   let conflictOpen = $state(false);
+  let resolvingConflictKey = $state<string | null>(null);
+  let conflictActionError = $state('');
   let previewData = $state<string | null>(null);
   let previewZoom = $state(1);
   let previewX = $state(0);
@@ -134,9 +140,17 @@
     { value: 'SPANISH', label: 'Español' }
   ];
   const allDockActions: DockAction[] = ['SORT', 'DEADLINE', 'HIDE_DONE', 'DELETE_DONE', 'BATCH_DELETE'];
+  const sidebarMinimumWidth = 200;
+  const sidebarMaximumWidth = 720;
+  const workspaceMinimumWidth = 440;
 
   onMount(() => {
     const cleanups: Array<() => void> = [];
+    const clampForViewport = () => {
+      if (!resizingSidebar) sidebarWidth = clampSidebarWidth(sidebarWidth);
+    };
+    window.addEventListener('resize', clampForViewport);
+    cleanups.push(() => window.removeEventListener('resize', clampForViewport));
     void (async () => {
       try {
         snapshot = await api.bootstrap();
@@ -249,7 +263,8 @@
   }
 
   function clampSidebarWidth(value: number): number {
-    return Math.min(560, Math.max(200, Math.round(value)));
+    const viewportMaximum = Math.max(sidebarMinimumWidth, window.innerWidth - workspaceMinimumWidth);
+    return Math.min(sidebarMaximumWidth, viewportMaximum, Math.max(sidebarMinimumWidth, Math.round(value)));
   }
 
   function sidebarWidthFromPointer(clientX: number): number {
@@ -545,9 +560,34 @@
     if (await commit((revision) => api.renameChecklist(revision, editingListId!, listNameDraft))) editingListId = null;
   }
 
-  async function deleteList(list: Checklist): Promise<void> {
-    if (!snapshot || !confirm(`${t('delete_list_title')}: ${list.name}`)) return;
-    await commit((revision) => api.deleteChecklist(revision, list.id));
+  function openDeleteChecklistModal(list: Checklist, trigger: HTMLElement): void {
+    deleteChecklistTarget = list;
+    deleteChecklistTrigger = trigger;
+    deleteChecklistBusy = false;
+  }
+
+  function closeDeleteChecklistModal(restoreFocus = true): void {
+    if (deleteChecklistBusy) return;
+    const trigger = deleteChecklistTrigger;
+    deleteChecklistTarget = null;
+    deleteChecklistTrigger = null;
+    if (restoreFocus) requestAnimationFrame(() => trigger?.focus());
+  }
+
+  async function confirmDeleteChecklist(): Promise<void> {
+    if (!snapshot || !deleteChecklistTarget || deleteChecklistBusy) return;
+    const checklistId = deleteChecklistTarget.id;
+    deleteChecklistBusy = true;
+    try {
+      const result = await commit((revision) => api.deleteChecklist(revision, checklistId));
+      if (result) {
+        deleteChecklistTarget = null;
+        deleteChecklistTrigger = null;
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('.new-list-button')?.focus());
+      }
+    } finally {
+      deleteChecklistBusy = false;
+    }
   }
 
   async function toggleSort(): Promise<void> {
@@ -775,14 +815,25 @@
 
   async function openConflicts(): Promise<void> {
     conflicts = await api.loadConflicts();
+    conflictActionError = '';
     conflictOpen = true;
   }
 
   async function resolveConflict(conflict: SyncConflictView, choice: ConflictResolutionChoice): Promise<void> {
-    if (!snapshot) return;
-    if (await commit((revision) => api.resolveConflict(revision, conflict.recordType, conflict.localId, choice))) {
-      conflicts = await api.loadConflicts();
-      conflictOpen = conflicts.length > 0;
+    if (!snapshot || resolvingConflictKey) return;
+    const key = `${conflict.recordType}:${conflict.localId}`;
+    resolvingConflictKey = key;
+    conflictActionError = '';
+    try {
+      const outcome = await executeMutation((revision) => api.resolveConflict(revision, conflict.recordType, conflict.localId, choice));
+      if (outcome.result) {
+        conflicts = await api.loadConflicts();
+        conflictOpen = conflicts.length > 0;
+      } else if (outcome.error) {
+        conflictActionError = mutationErrorText(outcome.error);
+      }
+    } finally {
+      if (resolvingConflictKey === key) resolvingConflictKey = null;
     }
   }
 
@@ -871,6 +922,25 @@
       : conflict.title;
   }
 
+  function conflictDescription(conflict: SyncConflictView): string {
+    if (conflict.messageCode === 'cloud_record_deleted') return wt('conflictCloudDeleted');
+    if (conflict.messageCode === 'local_record_deleted') return wt('conflictLocalDeleted');
+    if (conflict.messageCode === 'overlapping_fields_changed' || conflict.messageCode === 'remote_version_changed') return wt('conflictOverlapping');
+    return wt('conflictUnknown');
+  }
+
+  function keepLocalConflictLabel(conflict: SyncConflictView): string {
+    return conflict.recordType === 'checklist' && conflict.messageCode === 'cloud_record_deleted'
+      ? wt('keepAsNewChecklist')
+      : wt('useThisDevice');
+  }
+
+  function keepCloudConflictLabel(conflict: SyncConflictView): string {
+    return conflict.messageCode === 'cloud_record_deleted'
+      ? wt('acceptCloudDeletion')
+      : wt('useCloudVersion');
+  }
+
   function conflictFieldLabel(field: SyncConflictFieldView): string {
     const keys: Record<string, MessageKey> = {
       name: 'field_name', sort_index: 'field_sort', checklist_local_id: 'field_checklist',
@@ -928,6 +998,7 @@
   }
 
   function handleKeys(event: KeyboardEvent): void {
+    if (deleteChecklistTarget) return;
     if (event.key === 'Escape') {
       if (previewData) {
         previewData = null;
@@ -993,7 +1064,7 @@
             {#if editingListId !== list.id}
               <div class="nav-actions">
                 <button class="row-more" title={t('edit_list')} aria-label={`${t('edit_list')}: ${list.name}`} onclick={() => beginRename(list)}><Icon name="edit" /></button>
-                {#if normalLists.length > 1}<button class="row-delete" title={t('delete_list')} aria-label={`${t('delete_list')}: ${list.name}`} onclick={() => void deleteList(list)}><Icon name="trash" /></button>{/if}
+                {#if normalLists.length > 1}<button class="row-delete" title={t('delete_list')} aria-label={`${t('delete_list')}: ${list.name}`} aria-haspopup="dialog" onclick={(event) => openDeleteChecklistModal(list, event.currentTarget)}><Icon name="trash" /></button>{/if}
               </div>
             {/if}
           </div>
@@ -1022,7 +1093,7 @@
         aria-label={wt('checklists')}
         aria-orientation="vertical"
         aria-valuemin="200"
-        aria-valuemax="560"
+        aria-valuemax="720"
         aria-valuenow={sidebarWidth}
       ></div>
     </aside>
@@ -1037,7 +1108,6 @@
           </div>
         </div>
         <div class="header-actions status-actions status-signals">
-          {#if snapshot.sync.conflictCount}<button class="status-chip status-signal conflict" onclick={() => void openConflicts()}>{t('conflicts')} {snapshot.sync.conflictCount}</button>{/if}
           {#if snapshot.update.state === 'AVAILABLE'}<button class="status-chip status-signal update-chip" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('updateReady')}</button>{/if}
           {#if reminderNeedsAttention()}<button class="status-chip status-signal error" onclick={() => void chooseChecklist(specialLists.find((list) => list.kind === 'SETTINGS')?.id ?? snapshot.selectedChecklistId)}>{wt('notificationIssue')}</button>{/if}
         </div>
@@ -1133,7 +1203,7 @@
                 <button class="setting-icon-button password-modal-trigger" title={wt('changePassword')} aria-label={wt('changePassword')} aria-haspopup="dialog" aria-expanded={passwordModalOpen} disabled={passwordBusy} onclick={(event) => openPasswordModal(event.currentTarget)}><Icon name="key" size={20} /></button>
               </div>
             {/if}
-            <div class="setting-row sync-setting-row"><div><strong>{t('sync')}</strong><p data-testid="sync-detail">{syncDetailMessage()}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.auth.signedIn}<button class="setting-icon-button sync-now-button" title={t('sync_now')} aria-label={t('sync_now')} aria-busy={snapshot.sync.state === 'SYNCING'} disabled={snapshot.sync.state === 'SYNCING'} onclick={() => void syncNow()}><Icon name="sync" size={20} /></button>{/if}{#if snapshot.sync.conflictCount}<button class="setting-icon-button primary" title={`${t('review')} ${snapshot.sync.conflictCount}`} aria-label={`${t('review')} ${snapshot.sync.conflictCount}`} onclick={() => void openConflicts()}><Icon name="conflict" size={20} /></button>{/if}</div></div>
+            <div class="setting-row sync-setting-row"><div><strong>{t('sync')}</strong><p data-testid="sync-detail">{syncDetailMessage()}</p></div><div class="setting-actions"><span class="setting-value">{snapshot.sync.pendingCount} {t('pending')}</span>{#if snapshot.auth.signedIn}{#if snapshot.sync.conflictCount}<button class="setting-icon-button danger sync-conflict-button" title={`${wt('reviewSyncConflicts')} · ${snapshot.sync.conflictCount}`} aria-label={`${wt('reviewSyncConflicts')} · ${snapshot.sync.conflictCount}`} onclick={() => void openConflicts()}><Icon name="alert" size={20} /></button>{:else}<button class="setting-icon-button sync-now-button" title={t('sync_now')} aria-label={t('sync_now')} aria-busy={snapshot.sync.state === 'SYNCING'} disabled={snapshot.sync.state === 'SYNCING'} onclick={() => void syncNow()}><Icon name="sync" size={20} /></button>{/if}{/if}</div></div>
           </section>
 
           <section>
@@ -1187,6 +1257,16 @@
 
   </main>
 
+  {#if deleteChecklistTarget}
+    <DeleteChecklistModal
+      {locale}
+      checklistName={deleteChecklistTarget.name}
+      busy={deleteChecklistBusy}
+      onConfirm={confirmDeleteChecklist}
+      onClose={closeDeleteChecklistModal}
+    />
+  {/if}
+
   {#if authModalOpen && !snapshot.auth.signedIn}
     <AuthModal
       {locale}
@@ -1238,23 +1318,25 @@
   {/if}
 
   {#if conflictOpen}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && (conflictOpen = false)}>
-      <section class="conflict-modal" role="dialog" aria-modal="true" tabindex="-1">
-        <header><h2>{t('sync_conflicts')}</h2><button class="icon-button" onclick={() => (conflictOpen = false)}><Icon name="close" /></button></header>
+    <div class="modal-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && resolvingConflictKey === null && (conflictOpen = false)}>
+      <div class="conflict-modal" role="dialog" aria-modal="true" aria-labelledby="conflict-dialog-title" aria-busy={resolvingConflictKey !== null} tabindex="-1">
+        <header><h2 id="conflict-dialog-title">{t('sync_conflicts')}</h2><button class="icon-button" aria-label={t('close')} disabled={resolvingConflictKey !== null} onclick={() => (conflictOpen = false)}><Icon name="close" /></button></header>
         {#if conflicts.length === 0}<p>{t('no_conflicts')}</p>{/if}
+        {#if conflictActionError}<p class="conflict-action-error" role="alert">{conflictActionError}</p>{/if}
         {#each conflicts as conflict}
           <article class="conflict-card">
             <h3><ScriptAwareText text={conflictTitle(conflict)} /></h3>
+            <p class="conflict-explanation">{conflictDescription(conflict)}</p>
             <div class="conflict-table">
               <div class="conflict-table-head"><span></span><strong>{wt('thisDevice')}</strong><strong>{wt('cloudVersion')}</strong></div>
               {#each conflict.fields as field}
                 <div class="conflict-field-row"><strong>{conflictFieldLabel(field)}</strong><span><ScriptAwareText text={conflictValueText(field.localValue)} /></span><span><ScriptAwareText text={conflictValueText(field.cloudValue)} /></span></div>
               {/each}
             </div>
-            <div class="form-actions"><button class="quiet-button" onclick={() => void resolveConflict(conflict, 'KEEP_LOCAL')}>{wt('useThisDevice')}</button><button class="primary-button" onclick={() => void resolveConflict(conflict, 'KEEP_CLOUD')}>{wt('useCloudVersion')}</button></div>
+            <div class="form-actions"><button class="quiet-button" disabled={resolvingConflictKey !== null} onclick={() => void resolveConflict(conflict, 'KEEP_LOCAL')}>{resolvingConflictKey === `${conflict.recordType}:${conflict.localId}` ? wt('resolvingConflict') : keepLocalConflictLabel(conflict)}</button><button class="primary-button" disabled={resolvingConflictKey !== null} onclick={() => void resolveConflict(conflict, 'KEEP_CLOUD')}>{resolvingConflictKey === `${conflict.recordType}:${conflict.localId}` ? wt('resolvingConflict') : keepCloudConflictLabel(conflict)}</button></div>
           </article>
         {/each}
-      </section>
+      </div>
     </div>
   {/if}
 

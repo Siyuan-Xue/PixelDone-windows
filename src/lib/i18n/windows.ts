@@ -45,7 +45,17 @@ const english = {
   confirmPassword: 'Confirm new password',
   changingPassword: 'Changing password…',
   thisDevice: 'This device', cloudVersion: 'Cloud version', useThisDevice: 'Use this device', useCloudVersion: 'Use cloud version',
-  conflictPosition: 'Position {value}', statusActive: 'Active', statusCompleted: 'Completed', emptyValue: 'None'
+  conflictPosition: 'Position {value}', statusActive: 'Active', statusCompleted: 'Completed', emptyValue: 'None',
+  deleteChecklistDetail: 'After deletion, its tasks move to Trash and can still be restored later.',
+  deletingChecklist: 'Deleting\u2026',
+  conflictCloudDeleted: 'The cloud record was deleted while this device still has changes. Keeping this device creates a new synced copy; accepting the cloud deletion removes it here.',
+  conflictLocalDeleted: 'This device deleted the record while the cloud still has changes. Choose whether to restore the cloud content or confirm the deletion.',
+  conflictOverlapping: 'This device and the cloud changed the same details, so PixelDone could not merge them safely. Compare only the differences below.',
+  conflictUnknown: 'PixelDone could not combine these changes automatically. Compare the differences below and choose what should remain.',
+  keepAsNewChecklist: 'Keep as a new synced checklist',
+  acceptCloudDeletion: 'Accept cloud deletion',
+  resolvingConflict: 'Resolving\u2026',
+  reviewSyncConflicts: 'Review sync conflicts'
 } as const;
 
 export type WindowsMessageKey = keyof typeof english;
@@ -83,7 +93,17 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     signInToSyncAndroid: '登录后可与 Android 同步。', addChecklist: '添加清单',
     changePassword: '修改密码', currentPassword: '当前密码', newPassword: '新密码', confirmPassword: '确认新密码', changingPassword: '正在修改密码…',
     thisDevice: '此设备', cloudVersion: '云端版本', useThisDevice: '使用此设备版本', useCloudVersion: '使用云端版本',
-    conflictPosition: '清单位置 {value}', statusActive: '未完成', statusCompleted: '已完成', emptyValue: '无'
+    conflictPosition: '清单位置 {value}', statusActive: '未完成', statusCompleted: '已完成', emptyValue: '无',
+    deleteChecklistDetail: '\u5220\u9664\u540e\uff0c\u8be5\u6e05\u5355\u4e2d\u7684\u5f85\u529e\u5c06\u79fb\u81f3\u56de\u6536\u7ad9\uff0c\u4e4b\u540e\u4ecd\u53ef\u6062\u590d\u3002',
+    deletingChecklist: '\u6b63\u5728\u5220\u9664\u2026',
+    conflictCloudDeleted: '\u4e91\u7aef\u5df2\u5220\u9664\u6b64\u8bb0\u5f55\uff0c\u4f46\u6b64\u8bbe\u5907\u4ecd\u6709\u66f4\u6539\u3002\u4fdd\u7559\u6b64\u8bbe\u5907\u5185\u5bb9\u4f1a\u521b\u5efa\u4e00\u4e2a\u65b0\u7684\u540c\u6b65\u526f\u672c\uff1b\u63a5\u53d7\u4e91\u7aef\u5220\u9664\u4f1a\u5c06\u5b83\u4ece\u6b64\u8bbe\u5907\u79fb\u9664\u3002',
+    conflictLocalDeleted: '\u6b64\u8bbe\u5907\u5df2\u5220\u9664\u6b64\u8bb0\u5f55\uff0c\u4f46\u4e91\u7aef\u4ecd\u6709\u66f4\u6539\u3002\u8bf7\u9009\u62e9\u6062\u590d\u4e91\u7aef\u5185\u5bb9\u6216\u786e\u8ba4\u5220\u9664\u3002',
+    conflictOverlapping: '\u6b64\u8bbe\u5907\u548c\u4e91\u7aef\u4fee\u6539\u4e86\u76f8\u540c\u5185\u5bb9\uff0cPixelDone \u65e0\u6cd5\u5b89\u5168\u5408\u5e76\u3002\u53ea\u9700\u6bd4\u8f83\u4e0b\u65b9\u5217\u51fa\u7684\u5dee\u5f02\u3002',
+    conflictUnknown: 'PixelDone \u65e0\u6cd5\u81ea\u52a8\u5408\u5e76\u8fd9\u4e9b\u66f4\u6539\u3002\u8bf7\u6bd4\u8f83\u4e0b\u65b9\u5dee\u5f02\u5e76\u9009\u62e9\u8981\u4fdd\u7559\u7684\u5185\u5bb9\u3002',
+    keepAsNewChecklist: '\u4fdd\u7559\u4e3a\u65b0\u7684\u540c\u6b65\u6e05\u5355',
+    acceptCloudDeletion: '\u63a5\u53d7\u4e91\u7aef\u5220\u9664',
+    resolvingConflict: '\u6b63\u5728\u5904\u7406\u2026',
+    reviewSyncConflicts: '\u67e5\u770b\u540c\u6b65\u51b2\u7a81'
   },
   ar: {
     productKind: 'أداة بكسل', maker: 'CODEX & XUE', checklists: 'قوائم المهام', active: 'نشطة', done: 'مكتملة',
@@ -99,7 +119,17 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     signInToSyncAndroid: 'سجّل الدخول للمزامنة مع Android.', addChecklist: 'إضافة قائمة',
     changePassword: 'تغيير كلمة المرور', currentPassword: 'كلمة المرور الحالية', newPassword: 'كلمة المرور الجديدة', confirmPassword: 'تأكيد كلمة المرور الجديدة', changingPassword: 'جارٍ تغيير كلمة المرور…',
     thisDevice: 'هذا الجهاز', cloudVersion: 'إصدار السحابة', useThisDevice: 'استخدام إصدار هذا الجهاز', useCloudVersion: 'استخدام إصدار السحابة',
-    conflictPosition: 'الموضع {value}', statusActive: 'نشطة', statusCompleted: 'مكتملة', emptyValue: 'لا شيء'
+    conflictPosition: 'الموضع {value}', statusActive: 'نشطة', statusCompleted: 'مكتملة', emptyValue: 'لا شيء',
+    deleteChecklistDetail: 'بعد الحذف، ستُنقل مهام هذه القائمة إلى سلة المحذوفات ويمكن استعادتها لاحقًا.',
+    deletingChecklist: 'جارٍ الحذف…',
+    conflictCloudDeleted: 'حُذف السجل من السحابة بينما لا تزال لهذا الجهاز تغييرات. يؤدي الاحتفاظ بنسخة الجهاز إلى إنشاء نسخة مزامنة جديدة؛ وقبول حذف السحابة يزيلها من هنا.',
+    conflictLocalDeleted: 'حذف هذا الجهاز السجل بينما لا تزال للسحابة تغييرات. اختر استعادة محتوى السحابة أو تأكيد الحذف.',
+    conflictOverlapping: 'غيّر هذا الجهاز والسحابة التفاصيل نفسها، لذلك تعذّر على PixelDone دمجها بأمان. قارن الاختلافات أدناه فقط.',
+    conflictUnknown: 'تعذّر على PixelDone دمج هذه التغييرات تلقائيًا. قارن الاختلافات أدناه واختر ما يجب الاحتفاظ به.',
+    keepAsNewChecklist: 'الاحتفاظ كقائمة مزامنة جديدة',
+    acceptCloudDeletion: 'قبول حذف السحابة',
+    resolvingConflict: 'جارٍ الحل…',
+    reviewSyncConflicts: 'مراجعة تعارضات المزامنة'
   },
   fr: {
     productKind: 'OUTIL PIXEL', maker: 'CODEX & XUE', checklists: 'LISTES', active: 'ACTIVES', done: 'TERMINÉES',
@@ -115,7 +145,17 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     signInToSyncAndroid: 'Connectez-vous pour synchroniser avec Android.', addChecklist: 'Ajouter une liste',
     changePassword: 'Modifier le mot de passe', currentPassword: 'Mot de passe actuel', newPassword: 'Nouveau mot de passe', confirmPassword: 'Confirmer le nouveau mot de passe', changingPassword: 'Modification du mot de passe…',
     thisDevice: 'Cet appareil', cloudVersion: 'Version cloud', useThisDevice: 'Utiliser cet appareil', useCloudVersion: 'Utiliser la version cloud',
-    conflictPosition: 'Position {value}', statusActive: 'Active', statusCompleted: 'Terminée', emptyValue: 'Aucun'
+    conflictPosition: 'Position {value}', statusActive: 'Active', statusCompleted: 'Terminée', emptyValue: 'Aucun',
+    deleteChecklistDetail: 'Après la suppression, ses tâches sont déplacées dans la corbeille et peuvent encore être restaurées.',
+    deletingChecklist: 'Suppression…',
+    conflictCloudDeleted: 'L’enregistrement cloud a été supprimé alors que cet appareil contient encore des modifications. Conserver cet appareil crée une nouvelle copie synchronisée ; accepter la suppression cloud le retire ici.',
+    conflictLocalDeleted: 'Cet appareil a supprimé l’enregistrement alors que le cloud contient encore des modifications. Choisissez de restaurer le contenu cloud ou de confirmer la suppression.',
+    conflictOverlapping: 'Cet appareil et le cloud ont modifié les mêmes détails ; PixelDone ne peut pas les fusionner sans risque. Comparez uniquement les différences ci-dessous.',
+    conflictUnknown: 'PixelDone ne peut pas combiner automatiquement ces modifications. Comparez les différences ci-dessous et choisissez ce qui doit rester.',
+    keepAsNewChecklist: 'Conserver comme nouvelle liste synchronisée',
+    acceptCloudDeletion: 'Accepter la suppression cloud',
+    resolvingConflict: 'Résolution…',
+    reviewSyncConflicts: 'Examiner les conflits de synchronisation'
   },
   ru: {
     productKind: 'ПИКСЕЛЬНЫЙ ИНСТРУМЕНТ', maker: 'CODEX & XUE', checklists: 'СПИСКИ', active: 'АКТИВНЫЕ', done: 'ГОТОВО',
@@ -131,7 +171,17 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     signInToSyncAndroid: 'Войдите, чтобы синхронизироваться с Android.', addChecklist: 'Добавить список',
     changePassword: 'Изменить пароль', currentPassword: 'Текущий пароль', newPassword: 'Новый пароль', confirmPassword: 'Подтвердите новый пароль', changingPassword: 'Изменение пароля…',
     thisDevice: 'Это устройство', cloudVersion: 'Облачная версия', useThisDevice: 'Использовать версию устройства', useCloudVersion: 'Использовать облачную версию',
-    conflictPosition: 'Позиция {value}', statusActive: 'Активная', statusCompleted: 'Выполнена', emptyValue: 'Нет'
+    conflictPosition: 'Позиция {value}', statusActive: 'Активная', statusCompleted: 'Выполнена', emptyValue: 'Нет',
+    deleteChecklistDetail: 'После удаления задачи из этого списка переместятся в корзину, откуда их можно будет восстановить.',
+    deletingChecklist: 'Удаление…',
+    conflictCloudDeleted: 'Запись удалена в облаке, но на этом устройстве остались изменения. Сохранение версии устройства создаст новую синхронизируемую копию; принятие удаления удалит её здесь.',
+    conflictLocalDeleted: 'Это устройство удалило запись, но в облаке остались изменения. Выберите восстановление облачных данных или подтвердите удаление.',
+    conflictOverlapping: 'Это устройство и облако изменили одни и те же данные, поэтому PixelDone не может безопасно объединить их. Сравните только различия ниже.',
+    conflictUnknown: 'PixelDone не может автоматически объединить эти изменения. Сравните различия ниже и выберите, что сохранить.',
+    keepAsNewChecklist: 'Сохранить как новый синхронизируемый список',
+    acceptCloudDeletion: 'Принять удаление в облаке',
+    resolvingConflict: 'Разрешение…',
+    reviewSyncConflicts: 'Просмотреть конфликты синхронизации'
   },
   es: {
     productKind: 'UTILIDAD PÍXEL', maker: 'CODEX & XUE', checklists: 'LISTAS', active: 'ACTIVAS', done: 'HECHAS',
@@ -147,7 +197,17 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     signInToSyncAndroid: 'Inicia sesión para sincronizar con Android.', addChecklist: 'Añadir lista',
     changePassword: 'Cambiar contraseña', currentPassword: 'Contraseña actual', newPassword: 'Nueva contraseña', confirmPassword: 'Confirmar nueva contraseña', changingPassword: 'Cambiando contraseña…',
     thisDevice: 'Este dispositivo', cloudVersion: 'Versión en la nube', useThisDevice: 'Usar este dispositivo', useCloudVersion: 'Usar la versión en la nube',
-    conflictPosition: 'Posición {value}', statusActive: 'Activa', statusCompleted: 'Completada', emptyValue: 'Ninguno'
+    conflictPosition: 'Posición {value}', statusActive: 'Activa', statusCompleted: 'Completada', emptyValue: 'Ninguno',
+    deleteChecklistDetail: 'Después de eliminarla, sus tareas pasan a la papelera y todavía pueden restaurarse.',
+    deletingChecklist: 'Eliminando…',
+    conflictCloudDeleted: 'El registro se eliminó en la nube mientras este dispositivo aún tiene cambios. Conservar este dispositivo crea una nueva copia sincronizada; aceptar la eliminación lo quita de aquí.',
+    conflictLocalDeleted: 'Este dispositivo eliminó el registro mientras la nube aún tiene cambios. Elige restaurar el contenido de la nube o confirmar la eliminación.',
+    conflictOverlapping: 'Este dispositivo y la nube cambiaron los mismos detalles, por lo que PixelDone no pudo combinarlos de forma segura. Compara solo las diferencias de abajo.',
+    conflictUnknown: 'PixelDone no pudo combinar estos cambios automáticamente. Compara las diferencias de abajo y elige qué debe conservarse.',
+    keepAsNewChecklist: 'Conservar como nueva lista sincronizada',
+    acceptCloudDeletion: 'Aceptar la eliminación en la nube',
+    resolvingConflict: 'Resolviendo…',
+    reviewSyncConflicts: 'Revisar conflictos de sincronización'
   }
 };
 

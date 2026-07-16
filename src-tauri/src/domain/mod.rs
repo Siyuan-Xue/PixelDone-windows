@@ -24,7 +24,7 @@ pub const SETTINGS_CHECKLIST_ID: &str = "settings";
 pub const SETTINGS_CHECKLIST_NAME: &str = "SETTINGS";
 pub const DEFAULT_SIDEBAR_WIDTH_PX: i64 = 320;
 pub const MIN_SIDEBAR_WIDTH_PX: i64 = 200;
-pub const MAX_SIDEBAR_WIDTH_PX: i64 = 560;
+pub const MAX_SIDEBAR_WIDTH_PX: i64 = 720;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

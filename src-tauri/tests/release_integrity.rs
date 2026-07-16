@@ -6,9 +6,10 @@ use minisign_verify::{PublicKey, Signature};
 #[test]
 #[ignore = "requires the formal NSIS artifact"]
 fn formal_nsis_signature_matches_embedded_public_key() {
-    let artifact = PathBuf::from(
-        "target/x86_64-pc-windows-msvc/release/bundle/nsis/PixelDone_3.2.6_x64-setup.exe",
-    );
+    let artifact = PathBuf::from(format!(
+        "target/x86_64-pc-windows-msvc/release/bundle/nsis/PixelDone_{}_x64-setup.exe",
+        env!("CARGO_PKG_VERSION")
+    ));
     let signature_path = artifact.with_extension("exe.sig");
     let public_wrapper = fs::read_to_string("signing/pixeldone-updater.key.pub").unwrap();
     let signature_wrapper = fs::read_to_string(signature_path).unwrap();

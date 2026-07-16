@@ -59,7 +59,7 @@ let browserSnapshot: AppSnapshot = {
   auth: { cloudAvailable: true, signedIn: false, userId: null, userEmail: null, insecureHttp: true },
   sync: { state: 'SIGNED_OUT', message: '浏览器预览模式', issueCode: null, nextRetryAtMillis: null, remoteVersion: null, pendingCount: 0, conflictCount: 0, insecureHttp: true },
   reminder: { state: 'IDLE', activeTodoIds: [], lastFiredAtMillis: null, scheduledCount: 0, scheduleHorizonAtMillis: null, scheduleTruncated: false, message: null },
-  update: { state: 'CURRENT', currentVersion: '3.2.6', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
+  update: { state: 'CURRENT', currentVersion: '3.2.7', availableVersion: null, downloadUrl: null, source: 'preview', message: null, downloadedBytes: 0, totalBytes: null, lastCheckedAtMillis: null, nextCheckAtMillis: null },
   checklists: [
     {
       id: 'main',
@@ -290,10 +290,14 @@ export const api = {
       const trash = snapshot.checklists.find((list) => list.kind === 'TRASH')!;
       const index = trash.items.findIndex((item) => item.id === todoId);
       const [item] = trash.items.splice(index, 1);
-      let target = snapshot.checklists.find((list) => list.id === item.trashedFromChecklistId);
+      const deletedChecklistId = item.trashedFromChecklistId;
+      let target = deletedChecklistId
+        ? snapshot.checklists.find((list) => list.id === deletedChecklistId)
+        : snapshot.checklists.find((list) => list.kind === 'NORMAL');
       if (!target) {
+        const restoredChecklistId = deletedChecklistId ? randomId() : 'main';
         target = {
-          id: item.trashedFromChecklistId || 'main',
+          id: restoredChecklistId,
           name: item.trashedFromChecklistName || 'MAIN',
           kind: 'NORMAL',
           items: [],
@@ -301,6 +305,14 @@ export const api = {
           ,updatedAtMillis: Date.now(), remoteVersion: null
         };
         snapshot.checklists.splice(snapshot.checklists.findIndex((list) => list.kind !== 'NORMAL'), 0, target);
+        if (deletedChecklistId) {
+          for (const remaining of trash.items) {
+            if (remaining.trashedFromChecklistId === deletedChecklistId) {
+              remaining.trashedFromChecklistId = restoredChecklistId;
+              remaining.updatedAtMillis = Date.now();
+            }
+          }
+        }
       }
       target.items.push({
         ...item,

@@ -31,6 +31,21 @@ describe('Windows localization', () => {
     }
   });
 
+  it('provides delete confirmation and conflict recovery copy for every supported locale', () => {
+    const keys = [
+      'deleteChecklistDetail', 'deletingChecklist', 'conflictCloudDeleted',
+      'conflictLocalDeleted', 'conflictOverlapping', 'conflictUnknown',
+      'keepAsNewChecklist', 'acceptCloudDeletion', 'resolvingConflict',
+      'reviewSyncConflicts'
+    ] as const;
+    for (const locale of Object.keys(signedOutSyncMessages)) {
+      const supportedLocale = locale as keyof typeof signedOutSyncMessages;
+      for (const key of keys) {
+        expect(windowsMessage(supportedLocale, key).trim()).not.toBe('');
+      }
+    }
+  });
+
   it('provides account-dialog validation copy for every supported locale', () => {
     for (const locale of Object.keys(signedOutSyncMessages)) {
       const supportedLocale = locale as keyof typeof signedOutSyncMessages;

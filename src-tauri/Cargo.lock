@@ -3144,13 +3144,14 @@ dependencies = [
 
 [[package]]
 name = "pixeldone-windows"
-version = "3.2.6"
+version = "3.2.7"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
  "image",
  "minisign-verify",
  "reqwest 0.12.28",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

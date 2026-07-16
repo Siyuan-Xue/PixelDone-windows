@@ -1,6 +1,12 @@
 use pixeldone_windows_lib::{
-    domain::{AppSnapshot, DEFAULT_CHECKLIST_ID, ReminderRepeat, TodoItem, TodoPriority},
-    infrastructure::{db::LocalTodoAttachment, repository::SqliteRepository},
+    domain::{
+        AppSnapshot, Checklist, DEFAULT_CHECKLIST_ID, ReminderRepeat, TodoItem, TodoPriority,
+    },
+    infrastructure::{
+        db::{LocalTodoAttachment, StoredConflict},
+        repository::SqliteRepository,
+        sync::resolve_conflict,
+    },
 };
 
 use std::path::PathBuf;
@@ -55,6 +61,131 @@ fn migrations_persist_and_reload_the_initial_snapshot() {
                 .as_deref(),
             Some("migration-image.png")
         );
+        repository.close().await;
+        let _ = std::fs::remove_file(database_path);
+    });
+}
+
+#[test]
+fn recreating_a_record_cancels_its_unsent_local_tombstone() {
+    tauri::async_runtime::block_on(async {
+        let database_path = std::env::temp_dir().join(format!(
+            "pixeldone-tombstone-recreate-{}.sqlite3",
+            std::process::id()
+        ));
+        let repository = SqliteRepository::open(&database_path).await.unwrap();
+        let mut before = AppSnapshot::initial(10);
+        before.checklists.insert(
+            1,
+            Checklist::new_normal("deleted-list".to_owned(), "Deleted".to_owned(), 10),
+        );
+        repository.save_snapshot(&before).await.unwrap();
+
+        let mut deleted = before.clone();
+        deleted.checklists.retain(|list| list.id != "deleted-list");
+        repository
+            .save_snapshot_with_changes(&before, &deleted)
+            .await
+            .unwrap();
+        assert!(
+            repository
+                .tombstones()
+                .await
+                .unwrap()
+                .iter()
+                .any(|value| value.record_type == "checklist" && value.local_id == "deleted-list")
+        );
+
+        let mut recreated = deleted.clone();
+        recreated.checklists.insert(
+            1,
+            Checklist::new_normal("deleted-list".to_owned(), "Deleted".to_owned(), 11),
+        );
+        repository
+            .save_snapshot_with_changes(&deleted, &recreated)
+            .await
+            .unwrap();
+
+        assert!(
+            !repository
+                .tombstones()
+                .await
+                .unwrap()
+                .iter()
+                .any(|value| value.local_id == "deleted-list")
+        );
+        assert!(
+            repository
+                .dirty_records()
+                .await
+                .unwrap()
+                .iter()
+                .any(|value| value.record_type == "checklist" && value.local_id == "deleted-list")
+        );
+
+        repository.close().await;
+        let _ = std::fs::remove_file(database_path);
+    });
+}
+
+#[test]
+fn keeping_a_locally_restored_checklist_rekeys_it_and_clears_the_conflict() {
+    tauri::async_runtime::block_on(async {
+        let database_path = std::env::temp_dir().join(format!(
+            "pixeldone-restored-checklist-conflict-{}.sqlite3",
+            std::process::id()
+        ));
+        let repository = SqliteRepository::open(&database_path).await.unwrap();
+        let deleted_id = "deleted-list";
+        let mut snapshot = AppSnapshot::initial(10);
+        snapshot.checklists.insert(
+            1,
+            Checklist::new_normal(deleted_id.to_owned(), "Restored".to_owned(), 10),
+        );
+        repository.save_snapshot(&snapshot).await.unwrap();
+        repository
+            .mark_dirty("checklist", deleted_id)
+            .await
+            .unwrap();
+        repository
+            .save_conflict(&StoredConflict {
+                record_type: "checklist".to_owned(),
+                local_id: deleted_id.to_owned(),
+                local_payload_json: serde_json::json!({
+                    "owner_user_id": "owner",
+                    "local_id": deleted_id,
+                    "name": "Restored",
+                    "remote_version": null
+                })
+                .to_string(),
+                remote_payload_json: "null".to_owned(),
+                fields_json: r#"["name"]"#.to_owned(),
+                message: "remote_version_changed".to_owned(),
+                remote_version: Some(12),
+            })
+            .await
+            .unwrap();
+
+        resolve_conflict(&repository, &mut snapshot, "checklist", deleted_id, false)
+            .await
+            .unwrap();
+
+        let restored = snapshot
+            .checklists
+            .iter()
+            .find(|list| list.name == "Restored")
+            .unwrap();
+        assert_ne!(restored.id, deleted_id);
+        assert_eq!(restored.remote_version, None);
+        assert!(repository.conflicts().await.unwrap().is_empty());
+        let dirty = repository.dirty_records().await.unwrap();
+        assert!(!dirty.iter().any(|value| value.local_id == deleted_id));
+        assert!(
+            dirty
+                .iter()
+                .any(|value| { value.record_type == "checklist" && value.local_id == restored.id })
+        );
+
         repository.close().await;
         let _ = std::fs::remove_file(database_path);
     });
@@ -179,7 +310,7 @@ fn deployed_database_copy_upgrades_without_checksum_drift() {
             .await
             .expect("the upgraded snapshot should load")
             .expect("the deployed database should contain a snapshot");
-        assert!((200..=560).contains(&snapshot.settings.sidebar_width_px));
+        assert!((200..=720).contains(&snapshot.settings.sidebar_width_px));
         repository.close().await;
     });
 }

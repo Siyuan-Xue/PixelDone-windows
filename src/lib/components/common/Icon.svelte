@@ -22,6 +22,7 @@
     | 'batch-delete'
     | 'key'
     | 'conflict'
+    | 'alert'
     | 'update'
     | 'download'
     | 'folder';
@@ -102,6 +103,8 @@
     <circle cx="5" cy="8" r="3"></circle><path d="M8 8h6M11 8v3M13 8v2"></path>
   {:else if name === 'conflict'}
     <path d="M2 4h5l2 3h5M11 4h3v3M2 12h5l2-3h5M11 12h3V9"></path>
+  {:else if name === 'alert'}
+    <path d="M8 2v8" stroke-width="2.4"></path><circle cx="8" cy="13" r="1.2" fill="currentColor" stroke="none"></circle>
   {:else if name === 'update'}
     <path d="M13 6a5.5 5.5 0 1 0 .5 5M13 2v4H9"></path>
   {:else if name === 'download'}

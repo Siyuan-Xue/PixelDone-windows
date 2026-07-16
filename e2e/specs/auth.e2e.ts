@@ -307,4 +307,66 @@ describe('Authentication modal', () => {
       await browser.refresh();
     }
   });
+
+  it('replaces the Sync action with one red conflict action', async () => {
+    const initial = await bootstrap();
+    const originalChecklistId = initial.selectedChecklistId;
+    const settingsList = initial.checklists.find((list: any) => list.kind === 'SETTINGS');
+
+    try {
+      if (initial.selectedChecklistId !== settingsList.id) {
+        await invoke('select_checklist', {
+          expectedRevision: initial.revision,
+          checklistId: settingsList.id
+        });
+      }
+      await browser.refresh();
+      await browser.execute(() => {
+        const scope = globalThis as typeof globalThis & {
+          __PIXELDONE_E2E_AUTH_SIGN_IN__?: (input: { expectedRevision: number }) => Promise<unknown>;
+        };
+        scope.__PIXELDONE_E2E_AUTH_SIGN_IN__ = async ({ expectedRevision }) => ({
+          revision: expectedRevision + 1,
+          changedIds: ['auth', 'sync'],
+          snapshotDelta: {
+            upsertedChecklists: [], removedChecklistIds: [], selectedChecklistId: null,
+            sortMode: null, hideCompleted: null, quickDelete: null, showDeadlineCountdown: null,
+            checklistHistory: null, settings: null,
+            auth: { cloudAvailable: true, signedIn: true, userId: 'e2e-user', userEmail: 'person@example.com', insecureHttp: true },
+            sync: { state: 'CONFLICT', message: null, issueCode: null, nextRetryAtMillis: null, remoteVersion: 7, pendingCount: 1, conflictCount: 2, insecureHttp: true },
+            reminder: null, update: null
+          }
+        });
+      });
+
+      await $('.cloud-account .cloud-icon-button').click();
+      await $('#auth-email').setValue('person@example.com');
+      await $('#auth-password').setValue('secret!');
+      await $('.auth-submit').click();
+      await browser.waitUntil(async () => !(await $('.auth-modal').isExisting()));
+
+      const conflictButton = await $('.sync-setting-row .sync-conflict-button');
+      await expect(conflictButton).toBeDisplayed();
+      expect(await conflictButton.getAttribute('class')).toContain('danger');
+      expect(await $('.sync-setting-row .sync-now-button').isExisting()).toBe(false);
+      expect(await $$('.sync-setting-row .setting-icon-button')).toHaveLength(1);
+      expect(await $('.conflict-chip').isExisting()).toBe(false);
+    } finally {
+      await browser.execute(() => {
+        const scope = globalThis as typeof globalThis & { __PIXELDONE_E2E_AUTH_SIGN_IN__?: unknown };
+        delete scope.__PIXELDONE_E2E_AUTH_SIGN_IN__;
+      });
+      const snapshot = await bootstrap();
+      if (
+        snapshot.selectedChecklistId !== originalChecklistId &&
+        snapshot.checklists.some((list: any) => list.id === originalChecklistId)
+      ) {
+        await invoke('select_checklist', {
+          expectedRevision: snapshot.revision,
+          checklistId: originalChecklistId
+        });
+      }
+      await browser.refresh();
+    }
+  });
 });

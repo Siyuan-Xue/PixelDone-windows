@@ -175,9 +175,13 @@ pub async fn resolve_sync_conflict(
         SyncState::Conflict
     };
     repository.save_snapshot(&runtime.snapshot).await?;
-    Ok(MutationResult {
+    let result = MutationResult {
         revision: runtime.snapshot.revision,
         changed_ids: vec![record_type, local_id],
         snapshot_delta: SnapshotDelta::between(&before, &runtime.snapshot),
-    })
+    };
+    drop(runtime);
+    state.sync_notify.notify_one();
+    state.reminder_notify.notify_one();
+    Ok(result)
 }

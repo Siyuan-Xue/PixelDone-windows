@@ -30,8 +30,8 @@
   width: 100%;
   height: var(--workspace-status-height);
   gap: 8px;
-  border-bottom: 2px solid var(--border-strong);
   padding: 8px 10px 8px 16px;
+  background: var(--surface);
 }
 
 .new-list-button { display: inline-grid; flex: 0 0 44px; width: 44px; height: 44px; place-items: center; border: 0; padding: 0; color: var(--accent); background: transparent; }
@@ -73,7 +73,7 @@
 .app-shell.resizing { cursor: col-resize; user-select: none; }
 
 .workspace { position: relative; grid-area: workspace; display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--bg); }
-.workspace-status { display: flex; align-items: center; justify-content: space-between; flex: 0 0 var(--workspace-status-height); width: 100%; height: var(--workspace-status-height); gap: 16px; border-bottom: 2px solid var(--border-strong); padding: 8px 20px; background: var(--surface); }
+.workspace-status { display: flex; align-items: center; justify-content: space-between; flex: 0 0 var(--workspace-status-height); width: 100%; height: var(--workspace-status-height); gap: 16px; padding: 8px 20px; background: var(--bg); }
 .status-title { min-width: 0; }
 .status-title h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
@@ -90,8 +90,8 @@ button.status-signal:hover { border-color: var(--accent); color: var(--accent-ac
 .operation-notice.success { border-color: var(--success); color: var(--success); background: color-mix(in srgb, var(--success), transparent 88%); }
 
 .task-list { flex: 1; min-height: 0; overflow: auto; padding: 12px 20px 104px; }
-.task-list-inner { width: min(100%, 1040px); margin: 0 auto; }
-.task-row { --priority-color: var(--low); position: relative; display: flex; align-items: center; width: min(100%, 1040px); min-height: 72px; gap: 12px; margin: 0 auto 8px; border: 1px solid var(--border); padding: 10px 12px 10px 20px; background: var(--surface); }
+.task-list-inner { width: 100%; }
+.task-row { --priority-color: var(--low); position: relative; display: flex; align-items: center; width: 100%; min-height: 72px; gap: 12px; margin: 0 0 8px; border: 1px solid var(--border); padding: 10px 12px 10px 20px; background: var(--surface); }
 .task-row::before { position: absolute; top: 8px; bottom: 8px; left: 6px; width: 5px; content: ''; background: var(--priority-color); }
 .task-row:hover { border-color: var(--border-strong); background: var(--surface-raised); }
 .task-row.selected, .task-row:focus-within { border: 2px solid var(--accent); padding: 9px 11px 9px 19px; }
@@ -128,7 +128,7 @@ button.status-signal:hover { border-color: var(--accent); color: var(--accent-ac
 .dock-plus-symbol { font: 700 28px/1 var(--font-ui); letter-spacing: 0; transform: translateY(-1px); }
 
 .trash-list { padding-bottom: 20px; }
-.trash-toolbar { display: flex; justify-content: flex-end; width: min(100%, 1040px); margin: 0 auto 8px; }
+.trash-toolbar { display: flex; justify-content: flex-end; width: 100%; margin: 0 0 8px; }
 .trash-row { gap: 8px; }
 .settings-page { flex: 1; overflow: auto; padding: 20px; }
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 20px; max-width: 1120px; margin: 0 auto; }
@@ -212,6 +212,12 @@ button.selected .pixel-choice { border: 4px solid var(--accent); background: var
 .auth-submit { width: 100%; max-height: none; }
 .auth-submit:disabled { cursor: wait; opacity: .56; }
 .password-modal-form { gap: 14px; }
+.delete-checklist-content { display: grid; gap: 16px; padding: 16px; }
+.delete-checklist-name { border: 1px solid var(--border); padding: 12px; overflow-wrap: anywhere; background: var(--surface); font-family: var(--font-serif); font-size: 16px; line-height: 22px; font-weight: 600; }
+.delete-checklist-content > p { color: var(--text-secondary); font-size: 14px; line-height: 20px; font-weight: 500; }
+.delete-checklist-actions { margin-top: 4px; }
+.delete-checklist-actions button { width: 100%; max-height: none; }
+.delete-checklist-actions button:disabled { cursor: wait; opacity: .52; }
 .todo-editor-form { display: grid; gap: 16px; padding: 16px; }
 .todo-editor-form label, .todo-editor-form fieldset { display: grid; gap: 6px; border: 0; padding: 0; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
 .todo-editor-form legend { margin-bottom: 6px; }
@@ -231,6 +237,8 @@ button.selected .pixel-choice { border: 4px solid var(--accent); background: var
 .conflict-modal { width: min(920px, calc(100vw - 64px)); max-height: calc(100vh - 64px); padding: 16px; }
 .conflict-modal > header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid var(--border-strong); padding-bottom: 12px; }
 .conflict-card { margin-top: 12px; border: 1px solid var(--border); padding: 12px; background: var(--surface); }
+.conflict-explanation { max-width: 72ch; margin-top: 6px; color: var(--text-secondary); font-size: 14px; line-height: 20px; font-weight: 500; }
+.conflict-action-error { margin-top: 12px; border: 1px solid var(--error); padding: 10px 12px; color: var(--error); background: color-mix(in srgb, var(--error), transparent 92%); font-size: 12px; line-height: 16px; font-weight: 600; }
 .conflict-table { display: grid; margin-top: 10px; border: 1px solid var(--border); }
 .conflict-table-head, .conflict-field-row { display: grid; grid-template-columns: minmax(120px, .7fr) repeat(2, minmax(0, 1fr)); }
 .conflict-table-head { background: var(--surface-raised); color: var(--text-muted); }
@@ -239,6 +247,8 @@ button.selected .pixel-choice { border: 4px solid var(--accent); background: var
 .conflict-field-row { border-top: 1px solid var(--border); }
 .conflict-field-row > strong { color: var(--text-muted); font-size: 11px; }
 .form-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.conflict-card .form-actions { margin-top: 12px; }
+.conflict-card .form-actions button:disabled { cursor: wait; opacity: .52; }
 .image-backdrop { overflow: hidden; cursor: grab; background: color-mix(in srgb, #000, transparent 8%); touch-action: none; }
 .image-backdrop:active { cursor: grabbing; }
 .image-backdrop img { max-width: 80vw; max-height: 80vh; user-select: none; transform-origin: center; }

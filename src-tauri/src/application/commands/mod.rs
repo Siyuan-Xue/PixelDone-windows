@@ -50,6 +50,46 @@ mod revision_tests {
         assert!(!side_effect_started);
         assert!(require_revision(9, 9).is_ok());
     }
+
+    #[test]
+    fn restoring_from_a_deleted_checklist_creates_a_new_sync_identity() {
+        let mut snapshot = AppSnapshot::initial(1);
+        let mut first = TodoItem::from_draft(
+            "first".to_owned(),
+            TodoDraft {
+                title: "First".to_owned(),
+                priority: crate::domain::TodoPriority::Low,
+                due_at_millis: 0,
+                reminder_repeat: crate::domain::ReminderRepeat::None,
+            },
+            2,
+        )
+        .unwrap();
+        first.trashed_from_checklist_id = Some("deleted-list".to_owned());
+        first.trashed_from_checklist_name = Some("Deleted list".to_owned());
+        first.trashed_at_millis = Some(3);
+        let mut second = first.clone();
+        second.id = "second".to_owned();
+        snapshot.checklist_mut(TRASH_CHECKLIST_ID).unwrap().items = vec![first, second];
+
+        let changed = restore_todo_in_snapshot(&mut snapshot, "first", 4).unwrap();
+        let restored = snapshot
+            .checklists
+            .iter()
+            .find(|list| list.kind == ChecklistKind::Normal && list.name == "Deleted list")
+            .unwrap();
+        let restored_id = restored.id.clone();
+
+        assert_ne!(restored_id, "deleted-list");
+        assert_eq!(restored.items[0].id, "first");
+        assert!(changed.contains(&restored_id));
+        assert_eq!(
+            snapshot.checklist_mut(TRASH_CHECKLIST_ID).unwrap().items[0]
+                .trashed_from_checklist_id
+                .as_deref(),
+            Some(restored_id.as_str())
+        );
+    }
 }
 
 pub(super) async fn mutate<F>(
@@ -367,54 +407,92 @@ pub async fn restore_todo(
     todo_id: String,
 ) -> Result<MutationResult, AppError> {
     mutate(state, expected_revision, |snapshot| {
-        let trash_index = snapshot
-            .checklists
-            .iter()
-            .position(|list| list.id == TRASH_CHECKLIST_ID)
-            .ok_or_else(|| AppError::NotFound("trash checklist".to_owned()))?;
-        let todo_index = snapshot.checklists[trash_index]
-            .items
-            .iter()
-            .position(|item| item.id == todo_id)
-            .ok_or_else(|| AppError::NotFound(format!("todo {todo_id}")))?;
-        let mut item = snapshot.checklists[trash_index].items.remove(todo_index);
-        let target_id = item
-            .trashed_from_checklist_id
-            .clone()
-            .filter(|id| id != TRASH_CHECKLIST_ID && id != SETTINGS_CHECKLIST_ID)
-            .or_else(|| {
-                snapshot
-                    .checklists
-                    .iter()
-                    .find(|list| list.kind == ChecklistKind::Normal)
-                    .map(|list| list.id.clone())
-            })
-            .unwrap_or_else(|| "main".to_owned());
-
-        if !snapshot.checklists.iter().any(|list| list.id == target_id) {
-            let name = item
-                .trashed_from_checklist_name
-                .clone()
-                .filter(|name| !name.trim().is_empty())
-                .unwrap_or_else(|| "MAIN".to_owned());
-            let insert_at = snapshot
-                .checklists
-                .iter()
-                .position(|list| list.kind != ChecklistKind::Normal)
-                .unwrap_or(snapshot.checklists.len());
-            snapshot.checklists.insert(
-                insert_at,
-                Checklist::new_normal(target_id.clone(), name, unix_now_millis()),
-            );
-        }
-        item.trashed_from_checklist_id = None;
-        item.trashed_from_checklist_name = None;
-        item.trashed_at_millis = None;
-        item.updated_at_millis = unix_now_millis();
-        snapshot.checklist_mut(&target_id)?.items.push(item);
-        Ok(vec![TRASH_CHECKLIST_ID.to_owned(), target_id, todo_id])
+        restore_todo_in_snapshot(snapshot, &todo_id, unix_now_millis())
     })
     .await
+}
+
+fn restore_todo_in_snapshot(
+    snapshot: &mut AppSnapshot,
+    todo_id: &str,
+    restored_at_millis: i64,
+) -> Result<Vec<String>, AppError> {
+    let trash_index = snapshot
+        .checklists
+        .iter()
+        .position(|list| list.id == TRASH_CHECKLIST_ID)
+        .ok_or_else(|| AppError::NotFound("trash checklist".to_owned()))?;
+    let todo_index = snapshot.checklists[trash_index]
+        .items
+        .iter()
+        .position(|item| item.id == todo_id)
+        .ok_or_else(|| AppError::NotFound(format!("todo {todo_id}")))?;
+    let mut item = snapshot.checklists[trash_index].items.remove(todo_index);
+    let original_id = item
+        .trashed_from_checklist_id
+        .clone()
+        .filter(|id| id != TRASH_CHECKLIST_ID && id != SETTINGS_CHECKLIST_ID);
+    let original_exists = original_id.as_ref().is_some_and(|id| {
+        snapshot
+            .checklists
+            .iter()
+            .any(|list| list.id == *id && list.kind == ChecklistKind::Normal)
+    });
+    let target_id = if original_exists {
+        original_id
+            .clone()
+            .expect("existing original checklist has an id")
+    } else if original_id.is_some() {
+        // Cloud tombstones are permanent. A restore is therefore a new record with the
+        // original display name, never an update that competes with the deleted identity.
+        Uuid::new_v4().to_string()
+    } else {
+        snapshot
+            .checklists
+            .iter()
+            .find(|list| list.kind == ChecklistKind::Normal)
+            .map(|list| list.id.clone())
+            .unwrap_or_else(|| "main".to_owned())
+    };
+
+    let mut changed = vec![
+        TRASH_CHECKLIST_ID.to_owned(),
+        target_id.clone(),
+        todo_id.to_owned(),
+    ];
+    if !snapshot.checklists.iter().any(|list| list.id == target_id) {
+        let name = item
+            .trashed_from_checklist_name
+            .clone()
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| "MAIN".to_owned());
+        let insert_at = snapshot
+            .checklists
+            .iter()
+            .position(|list| list.kind != ChecklistKind::Normal)
+            .unwrap_or(snapshot.checklists.len());
+        snapshot.checklists.insert(
+            insert_at,
+            Checklist::new_normal(target_id.clone(), name, restored_at_millis),
+        );
+
+        if let Some(original_id) = original_id.as_deref() {
+            let trash = snapshot.checklist_mut(TRASH_CHECKLIST_ID)?;
+            for remaining in &mut trash.items {
+                if remaining.trashed_from_checklist_id.as_deref() == Some(original_id) {
+                    remaining.trashed_from_checklist_id = Some(target_id.clone());
+                    remaining.updated_at_millis = restored_at_millis;
+                    changed.push(remaining.id.clone());
+                }
+            }
+        }
+    }
+    item.trashed_from_checklist_id = None;
+    item.trashed_from_checklist_name = None;
+    item.trashed_at_millis = None;
+    item.updated_at_millis = restored_at_millis;
+    snapshot.checklist_mut(&target_id)?.items.push(item);
+    Ok(changed)
 }
 
 #[tauri::command]

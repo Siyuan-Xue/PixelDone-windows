@@ -1,6 +1,6 @@
 [package]
 name = "pixeldone-windows"
-version = "3.2.6"
+version = "3.2.7"
 description = "Rust-first Windows client for PixelDone"
 authors = ["CODEX & XUE"]
 edition = "2024"
@@ -31,6 +31,7 @@ base64 = "0.22"
 futures-util = "0.3"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

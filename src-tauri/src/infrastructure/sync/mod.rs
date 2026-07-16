@@ -157,6 +157,7 @@ pub async fn run_sync(
     attachments_dir: &Path,
 ) -> Result<SyncRunView, AppError> {
     repository.delete_synthetic_checklist_conflicts().await?;
+    auto_resolve_restored_checklist_conflicts(repository, snapshot).await?;
     let cursor = repository.sync_cursor(&session.user_id).await?;
     let pull_from = if repository.pristine_initialized(&session.user_id).await? {
         cursor
@@ -531,7 +532,7 @@ pub async fn conflicts(repository: &SqliteRepository) -> Result<Vec<SyncConflict
             local_id: conflict.local_id,
             title: conflict_title(&local, &cloud),
             fields,
-            message_code: conflict.message,
+            message_code: conflict_message_code(&local, &cloud, &conflict.message),
         });
     }
     Ok(result)
@@ -554,6 +555,20 @@ pub async fn resolve_conflict(
         .map_err(|error| AppError::Database(error.to_string()))?;
     let cloud = serde_json::from_str::<Value>(&conflict.remote_payload_json)
         .map_err(|error| AppError::Database(error.to_string()))?;
+    if record_type == "checklist" && cloud.is_null() {
+        if keep_cloud {
+            snapshot
+                .checklists
+                .retain(|list| list.kind != ChecklistKind::Normal || list.id != local_id);
+            *snapshot = snapshot.clone().normalized();
+            repository.clear_dirty(record_type, local_id).await?;
+            repository.delete_tombstone(record_type, local_id).await?;
+            repository.delete_conflict(record_type, local_id).await?;
+            return repository.save_snapshot(snapshot).await;
+        }
+        preserve_deleted_checklist_as_new(repository, snapshot, local_id, &local).await?;
+        return repository.save_snapshot(snapshot).await;
+    }
     let fields = serde_json::from_str::<Vec<String>>(&conflict.fields_json)
         .map_err(|error| AppError::Database(error.to_string()))?;
     let mut selected = local;
@@ -595,6 +610,94 @@ pub async fn resolve_conflict(
     .await?;
     repository.delete_conflict(record_type, local_id).await?;
     repository.save_snapshot(snapshot).await
+}
+
+async fn auto_resolve_restored_checklist_conflicts(
+    repository: &SqliteRepository,
+    snapshot: &mut AppSnapshot,
+) -> Result<(), AppError> {
+    for conflict in repository.conflicts().await? {
+        if conflict.record_type != "checklist" {
+            continue;
+        }
+        let local = serde_json::from_str::<Value>(&conflict.local_payload_json)
+            .map_err(|error| AppError::Database(error.to_string()))?;
+        let cloud = serde_json::from_str::<Value>(&conflict.remote_payload_json)
+            .map_err(|error| AppError::Database(error.to_string()))?;
+        let is_local_restore = !local.is_null()
+            && cloud.is_null()
+            && local.get("remote_version").is_none_or(Value::is_null);
+        if is_local_restore {
+            preserve_deleted_checklist_as_new(repository, snapshot, &conflict.local_id, &local)
+                .await?;
+        }
+    }
+    repository.save_snapshot(snapshot).await
+}
+
+async fn preserve_deleted_checklist_as_new(
+    repository: &SqliteRepository,
+    snapshot: &mut AppSnapshot,
+    deleted_id: &str,
+    local_payload: &Value,
+) -> Result<String, AppError> {
+    let new_id = Uuid::new_v4().to_string();
+    let list = snapshot
+        .checklists
+        .iter_mut()
+        .find(|list| list.kind == ChecklistKind::Normal && list.id == deleted_id)
+        .ok_or_else(|| AppError::NotFound(format!("checklist {deleted_id}")))?;
+    list.id = new_id.clone();
+    list.remote_version = None;
+    list.updated_at_millis = unix_now_millis();
+    let list_item_ids = list
+        .items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+
+    let mut relinked_item_ids = Vec::new();
+    for checklist in &mut snapshot.checklists {
+        for item in &mut checklist.items {
+            if item.trashed_from_checklist_id.as_deref() == Some(deleted_id) {
+                item.trashed_from_checklist_id = Some(new_id.clone());
+                item.updated_at_millis = unix_now_millis();
+                relinked_item_ids.push(item.id.clone());
+            }
+        }
+    }
+    if snapshot.selected_checklist_id == deleted_id {
+        snapshot.selected_checklist_id = new_id.clone();
+    }
+    for history_id in &mut snapshot.checklist_history {
+        if history_id == deleted_id {
+            *history_id = new_id.clone();
+        }
+    }
+
+    repository.clear_dirty("checklist", deleted_id).await?;
+    repository.delete_tombstone("checklist", deleted_id).await?;
+    repository.delete_conflict("checklist", deleted_id).await?;
+    if let Some(owner) = local_payload.get("owner_user_id").and_then(Value::as_str) {
+        repository
+            .delete_pristine_record(owner, "checklist", deleted_id)
+            .await?;
+    }
+    repository.mark_dirty("checklist", &new_id).await?;
+    for item_id in list_item_ids.into_iter().chain(relinked_item_ids) {
+        repository.mark_dirty("item", &item_id).await?;
+    }
+    Ok(new_id)
+}
+
+fn conflict_message_code(local: &Value, cloud: &Value, stored: &str) -> String {
+    if !local.is_null() && cloud.is_null() {
+        "cloud_record_deleted".to_owned()
+    } else if local.is_null() && !cloud.is_null() {
+        "local_record_deleted".to_owned()
+    } else {
+        stored.to_owned()
+    }
 }
 
 async fn apply_remote_changes(
@@ -1793,6 +1896,30 @@ mod tests {
         assert!(is_synthetic_checklist_id(TRASH_CHECKLIST_ID));
         assert!(is_synthetic_checklist_id(SETTINGS_CHECKLIST_ID));
         assert!(!is_synthetic_checklist_id("main"));
+    }
+
+    #[test]
+    fn deleted_cloud_records_receive_an_explanatory_conflict_code() {
+        assert_eq!(
+            conflict_message_code(&json!({ "name": "Local" }), &Value::Null, "tombstone_wins"),
+            "cloud_record_deleted"
+        );
+        assert_eq!(
+            conflict_message_code(
+                &Value::Null,
+                &json!({ "name": "Cloud" }),
+                "remote_version_changed"
+            ),
+            "local_record_deleted"
+        );
+        assert_eq!(
+            conflict_message_code(
+                &json!({ "name": "Local" }),
+                &json!({ "name": "Cloud" }),
+                "overlapping_fields_changed"
+            ),
+            "overlapping_fields_changed"
+        );
     }
 
     #[test]
