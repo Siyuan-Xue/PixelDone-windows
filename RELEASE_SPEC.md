@@ -40,6 +40,13 @@ Every GitHub and Gitee Release must contain exactly the same bytes for:
 - If GitHub publishing succeeds but Gitee publishing fails, manually dispatch `Release Windows x64` with the immutable tag and `mirror_existing=true`.
 - Recovery downloads the existing GitHub Release, verifies its checksum and metadata, and mirrors those files without rebuilding.
 
+## Workflow handoff
+
+- Confirm that the release workflow was triggered for the intended immutable tag and entered the expected build or recovery path.
+- When the automated workflow has been exercised repeatedly and is considered stable, a Codex task may end while the workflow is still running if no manual work remains other than checking its final conclusion.
+- The handoff must include the workflow URL and its current status. Do not report the workflow or Release as successful before GitHub records a successful conclusion.
+- A known failure, conflicting asset, or partial Release that still requires recovery is remaining manual work and must not be treated as a monitoring-only handoff.
+
 ## Application updater fallback
 
 - The installed application checks the signed GitHub updater endpoint first.
