@@ -110,6 +110,12 @@ pub fn run() {
             if let Some(error) = &notification_identity_error {
                 snapshot.reminder.state = "IDENTITY_ERROR".to_owned();
                 snapshot.reminder.message = Some(error.clone());
+            } else if snapshot.reminder.state == "IDENTITY_ERROR" {
+                snapshot.reminder.state = "IDLE".to_owned();
+                snapshot.reminder.scheduled_count = 0;
+                snapshot.reminder.schedule_horizon_at_millis = None;
+                snapshot.reminder.schedule_truncated = false;
+                snapshot.reminder.message = None;
             }
             tauri::async_runtime::block_on(repository.save_snapshot(&snapshot))
                 .map_err(boxed_error)?;

@@ -1,4 +1,4 @@
-import { bootstrap, invoke } from '../helpers';
+import { bootstrap, invoke, invokeRaw } from '../helpers';
 
 describe('Checklist parity', () => {
   it('requires an in-app confirmation before deleting a checklist', async () => {
@@ -14,30 +14,41 @@ describe('Checklist parity', () => {
 
       const findRow = async () => {
         const rows = await $$('.list-nav .nav-row');
-        return rows.find(async (row) => (await row.getText()).includes('E2E DELETE CONFIRM'));
+        for (const row of rows) {
+          if ((await row.getText()).includes('E2E DELETE CONFIRM')) return row;
+        }
+        return undefined;
       };
       const firstRow = await findRow();
       if (!firstRow) throw new Error('Delete confirmation checklist row missing');
       await firstRow.$('.row-delete').click();
 
-      await expect($('.delete-checklist-modal')).toBeDisplayed();
-      await expect($('.delete-checklist-name')).toHaveText('E2E DELETE CONFIRM');
-      await expect($('.delete-checklist-actions .quiet-button')).toBeFocused();
+      await expect($('.destructive-confirmation-modal')).toBeDisplayed();
+      await expect($('.destructive-confirmation-target')).toHaveText('E2E DELETE CONFIRM');
+      await expect($('.destructive-confirmation-actions .quiet-button')).toBeFocused();
       await browser.keys(['Escape']);
-      await expect($('.delete-checklist-modal')).not.toBeExisting();
+      await expect($('.destructive-confirmation-modal')).not.toBeExisting();
       snapshot = await bootstrap();
       expect(snapshot.checklists.some((list: any) => list.id === checklistId)).toBe(true);
 
       const secondRow = await findRow();
       if (!secondRow) throw new Error('Checklist disappeared before confirmation');
       await secondRow.$('.row-delete').click();
-      await $('.delete-checklist-confirm').click();
-      await browser.waitUntil(async () => !(await $('.delete-checklist-modal').isExisting()));
+      await $('.destructive-confirmation-backdrop .modal-dismiss-layer').click();
+      await expect(secondRow.$('.row-delete')).toBeFocused();
+      snapshot = await bootstrap();
+      expect(snapshot.checklists.some((list: any) => list.id === checklistId)).toBe(true);
+
+      const thirdRow = await findRow();
+      if (!thirdRow) throw new Error('Checklist disappeared before confirmation');
+      await thirdRow.$('.row-delete').click();
+      await $('.destructive-confirmation-confirm').click();
+      await browser.waitUntil(async () => !(await $('.destructive-confirmation-modal').isExisting()));
       snapshot = await bootstrap();
       expect(snapshot.checklists.some((list: any) => list.id === checklistId)).toBe(false);
       checklistId = null;
     } finally {
-      if (await $('.delete-checklist-modal').isExisting()) await browser.keys(['Escape']);
+      if (await $('.destructive-confirmation-modal').isExisting()) await browser.keys(['Escape']);
       const snapshot = await bootstrap();
       if (checklistId && snapshot.checklists.some((list: any) => list.id === checklistId)) {
         await invoke('delete_checklist', { expectedRevision: snapshot.revision, checklistId });
@@ -57,7 +68,7 @@ describe('Checklist parity', () => {
     });
     snapshot = await bootstrap();
     expect(snapshot.checklists.find((list: any) => list.id === checklistId)?.name).toBe('RENAMED E2E');
-    await expect(invoke('rename_checklist', {
+    await expect(invokeRaw('rename_checklist', {
       expectedRevision: renamed.revision - 1,
       checklistId,
       name: 'STALE'

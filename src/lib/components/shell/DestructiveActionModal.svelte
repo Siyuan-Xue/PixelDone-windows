@@ -3,19 +3,28 @@
   import Icon from '$lib/components/common/Icon.svelte';
   import ScriptAwareText from '$lib/components/common/ScriptAwareText.svelte';
   import type { Locale, MessageKey } from '$lib/generated/i18n';
-  import { uiMessage, uiWindowsMessage } from '$lib/i18n/presentation';
-  import type { WindowsMessageKey } from '$lib/i18n/windows';
+  import { uiMessage } from '$lib/i18n/presentation';
 
   let {
     locale,
-    checklistName,
+    context,
+    title,
+    target,
+    detail,
     busy,
+    confirmLabel,
+    busyLabel,
     onConfirm,
     onClose
   }: {
     locale: Locale;
-    checklistName: string;
+    context: string;
+    title: string;
+    target: string;
+    detail: string;
     busy: boolean;
+    confirmLabel: string;
+    busyLabel: string;
     onConfirm: () => void | Promise<void>;
     onClose: () => void;
   } = $props();
@@ -25,10 +34,6 @@
 
   function t(key: MessageKey): string {
     return uiMessage(locale, key);
-  }
-
-  function wt(key: WindowsMessageKey): string {
-    return uiWindowsMessage(locale, key);
   }
 
   function close(): void {
@@ -70,33 +75,33 @@
 
 <svelte:window onkeydown={handleWindowKey} />
 
-<div class="modal-backdrop delete-checklist-backdrop">
+<div class="modal-backdrop destructive-confirmation-backdrop">
   <button class="modal-dismiss-layer" type="button" aria-label={t('close')} disabled={busy} onclick={close}></button>
   <div
     bind:this={dialog}
-    class="auth-modal delete-checklist-modal"
+    class="auth-modal destructive-confirmation-modal"
     role="alertdialog"
     aria-modal="true"
-    aria-labelledby="delete-checklist-title"
-    aria-describedby="delete-checklist-detail"
+    aria-labelledby="destructive-confirmation-title"
+    aria-describedby="destructive-confirmation-detail"
     aria-busy={busy}
     tabindex="-1"
     onkeydown={handleDialogKey}
   >
     <header class="modal-header auth-modal-header">
       <div>
-        <span class="auth-context">{wt('checklists')}</span>
-        <h2 id="delete-checklist-title">{t('delete_list_title')}</h2>
+        <span class="auth-context">{context}</span>
+        <h2 id="destructive-confirmation-title">{title}</h2>
       </div>
       <button class="icon-button" type="button" title={t('close')} aria-label={t('close')} disabled={busy} onclick={close}><Icon name="close" /></button>
     </header>
 
-    <div class="delete-checklist-content">
-      <div class="delete-checklist-name" dir="auto"><ScriptAwareText text={checklistName} role="serif" /></div>
-      <p id="delete-checklist-detail">{wt('deleteChecklistDetail')}</p>
-      <div class="form-actions delete-checklist-actions">
+    <div class="destructive-confirmation-content">
+      <div class="destructive-confirmation-target" dir="auto"><ScriptAwareText text={target} role="serif" /></div>
+      <p id="destructive-confirmation-detail">{detail}</p>
+      <div class="form-actions destructive-confirmation-actions">
         <button bind:this={cancelButton} class="quiet-button" type="button" disabled={busy} onclick={close}>{t('cancel')}</button>
-        <button class="danger-button delete-checklist-confirm" type="button" disabled={busy} onclick={() => void onConfirm()}>{busy ? wt('deletingChecklist') : t('delete')}</button>
+        <button class="danger-button destructive-confirmation-confirm" type="button" disabled={busy} onclick={() => void onConfirm()}>{busy ? busyLabel : confirmLabel}</button>
       </div>
     </div>
   </div>

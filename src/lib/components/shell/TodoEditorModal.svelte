@@ -31,7 +31,7 @@
     onChooseImage: () => void | Promise<void>;
     onPreviewImage: () => void | Promise<void>;
     onRemoveImage: () => void | Promise<void>;
-    onDelete: () => void | Promise<void>;
+    onDelete: (trigger: HTMLElement) => void | Promise<void>;
   } = $props();
 
   let dialog: HTMLElement;
@@ -150,7 +150,7 @@
       {/if}
 
       <footer class="modal-actions">
-        {#if todo}<button type="button" class="danger-button editor-delete" onclick={() => void onDelete()}>{t('delete_task')}</button>{/if}
+        {#if todo}<button type="button" class="danger-button editor-delete" aria-haspopup="dialog" onclick={(event) => void onDelete(event.currentTarget)}>{t('delete_task')}</button>{/if}
         <span class="keyboard-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span>
         <button type="button" class="quiet-button" onclick={onClose}>{t('cancel')}</button>
         <button type="submit" class="primary-button">{t('save')}</button>

@@ -1,11 +1,11 @@
 # PixelDone Windows
 
-当前工作树是 PixelDone for Windows 3.2.7 正式版。3.2.7 在 3.2.6 基础上完善清单删除、同步恢复、宽屏布局、双平台 Release 和 Gitee 更新回退。
+当前工作树是 PixelDone for Windows 3.2.8 正式版。3.2.8 在 3.2.7 基础上统一危险删除确认、完善 Trash 搜索筛选，并修复开发版通知身份误报。
 
 ## 版本基线
 
 - Android：配套正式版为 PixelDone 3.2.5（versionCode 86，Room v7）。
-- Windows：当前正式版本为 3.2.7，安装身份与数据目录保持不变。
+- Windows：当前正式版本为 3.2.8，安装身份与数据目录保持不变。
 - Android 与 Windows：Supabase 3.2 两阶段迁移及单行总验收已于 2026-07-13 全部通过。
 - Windows：Rust 1.96.1 / Edition 2024、Tauri 2、Svelte 5.56.4、TypeScript 6.0.2、Bun 1.3.14。
 - 支持范围：Windows 11 24H2+，仅发布 x64 NSIS 安装包。
@@ -15,7 +15,7 @@
 
 ## 安装与运行
 
-3.2.7 正式安装包使用 `PixelDone_3.2.7_x64-setup.exe`。正式默认目录是 `%LOCALAPPDATA%\PixelDone`，主程序名为 `PixelDone.exe`。
+3.2.8 正式安装包使用 `PixelDone_3.2.8_x64-setup.exe`。正式默认目录是 `%LOCALAPPDATA%\PixelDone`，主程序名为 `PixelDone.exe`。
 
 重复运行相同或更高版本的 EXE 会进入 NSIS 维护/升级流程并覆盖同一产品安装，不会创建多个 PixelDone。Beta 使用独立产品标识，允许与正式版并存。
 
@@ -23,7 +23,7 @@
 
 ## 桌面界面
 
-3.2.7 延续确定性多语言字体体系和独立密码弹窗，并增加专用清单删除确认框。左侧清单栏的持久化范围扩展到 200–720px，同时动态为主工作区保留至少 440px。验证记录见 3.2.7 release evidence。
+3.2.8 将待办、已完成待办、清单、Trash 和旧版数据库的危险删除统一到应用内确认框，并为 Trash 增加标题、优先级和来源清单组合筛选。左侧清单栏继续支持 200–720px 的持久化范围，同时动态为主工作区保留至少 440px。验证记录见 3.2.8 release evidence。
 
 - 左侧栏集中显示普通清单、回收站、设置、账号和同步摘要；独立方形按钮负责新建清单，不再使用长按任务“+”按钮的移动端手势。
 - 主工作区顶部显示当前清单、Active/Done 数量、同步状态以及按需出现的冲突、通知和更新异常。
@@ -98,4 +98,4 @@ $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw 'src-tauri/signing/pixeldone-u
 bun tauri build --bundles nsis --target x86_64-pc-windows-msvc
 ```
 
-Supabase 3.2 Storage 策略和公共 schema 保持不变。3.2.7 是正式发布；发布清单仍明确保留六项跨设备云端场景作为已授权但尚未完成的验证项，不应将它们误报为已验证。
+Supabase 3.2 Storage 策略和公共 schema 保持不变。3.2.8 是正式发布；发布清单仍明确保留六项跨设备云端场景作为已授权但尚未完成的验证项，不应将它们误报为已验证。

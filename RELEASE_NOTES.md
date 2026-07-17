@@ -1,32 +1,30 @@
-# PixelDone for Windows 3.2.7
+# PixelDone for Windows 3.2.8
 
-PixelDone for Windows 3.2.7 improves checklist safety, synchronization recovery, large-window layout, and release resilience. It also establishes Gitee as a verified secondary Release and updater source without creating a second build authority.
+PixelDone for Windows 3.2.8 improves deletion safety, makes Trash easier to search and manage, and fixes a misleading notification warning when testing a development build beside an installed release.
 
-## Checklist and layout
+## Safer destructive actions
 
-- Adds a dedicated localized checklist-deletion confirmation dialog with focus containment, Escape/backdrop behavior, and pending-request isolation.
-- Keeps ordinary checklist navigation compact while preserving Trash counts and clearer conflict/retry feedback.
-- Expands the persisted checklist sidebar range to 200–720 pixels and dynamically reserves at least 440 pixels for the main workspace.
-- Refreshes Windows parity screenshots and layout coverage for the updated interface.
+- Uses one localized in-app alert dialog for deleting a todo, clearing completed todos, deleting a checklist, permanently deleting one Trash item, emptying all of Trash, and removing the legacy Roaming database.
+- Defaults focus to Cancel, traps keyboard focus, supports Escape and backdrop cancellation, restores focus to the triggering control, and prevents duplicate submission while an action is running.
+- Shows the affected item count for clearing completed todos and emptying Trash, while revision checks continue to protect every confirmed mutation.
+- Keeps quick delete as an explicitly enabled one-click move into recoverable Trash.
 
-## Synchronization reliability
+## Trash navigation and layout
 
-- Silently refreshes and retries normal revision races once, while repeated conflicts and remote deletion receive non-destructive guidance.
-- Prevents delayed or gapped mutations from regressing the displayed snapshot.
-- Keeps transient network recovery, authentication expiry, server compatibility, local-storage, remote-data, and unknown failures in structured Sync status instead of the global alert.
-- Preserves the focused password-change flow and converges successful authentication changes onto the latest local snapshot.
+- Replaces the textual restore and permanent-delete actions with accessible borderless icon buttons.
+- Displays the original checklist name without the broken `%1$s` placeholder or a redundant prefix.
+- Adds title search plus priority and source-checklist filters, with combined matching and an independent no-results state.
+- Keeps search, both filters, and Empty Trash on one responsive toolbar; Empty Trash still clears the entire Trash rather than only filtered results.
 
-## Release and updater resilience
+## Windows notification identity
 
-- Runs the complete Bun, Svelte, parity, formatting, Clippy, and Rust test gates in CI before packaging.
-- Builds and updater-signs one x64 NSIS installer, then publishes byte-identical artifacts and release notes to GitHub and Gitee Releases.
-- Adds a recovery dispatch that can rebuild a missing Gitee Release from the immutable verified GitHub Release without rebuilding the application.
-- Keeps GitHub as the primary updater source and falls back through the Gitee Releases API when GitHub discovery fails.
-- If a GitHub download or installation fails, restricts Gitee fallback to the exact same version to prevent an unintended version switch during installation.
-- Verifies every downloaded installer with the embedded Tauri updater public key; Gitee is a transport fallback, not a trust fallback.
+- Allows a direct development build to reuse the installed PixelDone executable for Windows notification shortcut identity.
+- Avoids showing “Notifications need attention” merely because the currently running executable came from `target/debug`, while still reporting a real identity error when no installed build is available.
 
-## Release status
+## Quality and release status
 
-- Version metadata, tag, updater manifests, and the x64 NSIS artifact target 3.2.7.
+- Expands unit and WebView2 coverage for destructive confirmations, Trash filtering, focus restoration, responsive and RTL layouts, stale-revision retry behavior, and notification identity selection.
+- Version metadata, tag, updater manifests, and the x64 NSIS artifact target 3.2.8.
+- GitHub Actions builds and signs one installer, publishes it to GitHub Release, and mirrors the same bytes to Gitee Release.
 - Authenticode remains intentionally disabled, so Windows can identify the installer as an unknown publisher. The Tauri updater signature and published SHA-256 protect artifact integrity.
 - Existing cleartext HTTP/WS deployment risk remains unchanged. Six cross-device cloud scenarios remain explicitly authorized release exceptions and are not represented as verified.

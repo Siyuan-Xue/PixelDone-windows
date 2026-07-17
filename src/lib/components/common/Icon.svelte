@@ -25,7 +25,8 @@
     | 'alert'
     | 'update'
     | 'download'
-    | 'folder';
+    | 'folder'
+    | 'restore';
   let { name, size = 16, active = false }: { name: IconName; size?: number; active?: boolean } = $props();
   let cloudAction = $derived(name === 'login' || name === 'logout' || name === 'sync');
   let dockAction = $derived(['sort', 'calendar', 'hide', 'trash-check', 'batch-delete'].includes(name));
@@ -111,5 +112,7 @@
     <path d="M8 2v8M4.5 7.5 8 11l3.5-3.5M3 14h10"></path>
   {:else if name === 'folder'}
     <path d="M2 4h5l1.5 2H14v7H2Z"></path>
+  {:else if name === 'restore'}
+    <path d="M5 5H2v-3M2.5 5A6 6 0 1 1 2 10"></path>
   {/if}
 </svg>

@@ -43,7 +43,7 @@ interface ParityReleaseOverlay {
   rowOverrides?: Record<string, Partial<ParityRow>>;
 }
 
-export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.2.7.yaml';
+export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.2.8.yaml';
 
 export async function loadManifest(): Promise<ParityManifest> {
   const overlayUrl = new URL(`../${CURRENT_PARITY_MANIFEST}`, import.meta.url);

@@ -19,7 +19,7 @@
     enabled: (action: DockAction) => boolean;
     labelFor: (action: DockAction) => string;
     addLabel: string;
-    onAction: (action: DockAction) => void;
+    onAction: (action: DockAction, trigger: HTMLElement) => void;
     onAdd: (trigger: HTMLElement) => void;
   } = $props();
 
@@ -52,7 +52,7 @@
         title={labelFor(item.action)}
         aria-label={labelFor(item.action)}
         aria-pressed={active(item.action)}
-        onclick={() => onAction(item.action)}
+        onclick={(event) => onAction(item.action, event.currentTarget)}
       ><Icon name={actionIcons[item.action]} size={22} active={item.action === 'SORT' && active(item.action)} /></button>
     {/if}
   {/each}

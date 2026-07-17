@@ -33,7 +33,11 @@ describe('Windows localization', () => {
 
   it('provides delete confirmation and conflict recovery copy for every supported locale', () => {
     const keys = [
-      'deleteChecklistDetail', 'deletingChecklist', 'conflictCloudDeleted',
+      'deleteChecklistDetail', 'deletingChecklist', 'deleteTodoDetail',
+      'deleteCompletedDetail', 'permanentlyDeleteTaskTitle',
+      'permanentlyDeleteTodoDetail', 'permanentlyDeleteTrashDetail',
+      'deleteLegacyTitle', 'deleteLegacyDetail', 'deleting', 'taskCount', 'taskCountOne',
+      'conflictCloudDeleted',
       'conflictLocalDeleted', 'conflictOverlapping', 'conflictUnknown',
       'keepAsNewChecklist', 'acceptCloudDeletion', 'resolvingConflict',
       'reviewSyncConflicts'

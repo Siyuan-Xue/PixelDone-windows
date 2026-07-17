@@ -44,11 +44,9 @@ pub fn ensure_notification_identity(executable: &Path) -> Result<PathBuf, AppErr
     unsafe { SetCurrentProcessExplicitAppUserModelID(PCWSTR(app_id.as_ptr())) }
         .map_err(platform_error)?;
 
-    if is_direct_development_binary(executable) {
-        return Err(AppError::Platform(
-            "Windows notifications require an installed PixelDone build".to_owned(),
-        ));
-    }
+    let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let identity_executable =
+        notification_identity_executable(executable, local_app_data.as_deref())?;
 
     let initialized = match unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok() {
         Ok(()) => true,
@@ -56,7 +54,22 @@ pub fn ensure_notification_identity(executable: &Path) -> Result<PathBuf, AppErr
         Err(error) => return Err(platform_error(error)),
     };
     let _guard = ComGuard(initialized);
-    create_start_menu_shortcut(executable)
+    create_start_menu_shortcut(&identity_executable)
+}
+
+fn notification_identity_executable(
+    executable: &Path,
+    local_app_data: Option<&Path>,
+) -> Result<PathBuf, AppError> {
+    if !is_direct_development_binary(executable) {
+        return Ok(executable.to_path_buf());
+    }
+    let installed = local_app_data
+        .map(|root| root.join("PixelDone").join("PixelDone.exe"))
+        .filter(|path| path.is_file());
+    installed.ok_or_else(|| {
+        AppError::Platform("Windows notifications require an installed PixelDone build".to_owned())
+    })
 }
 
 fn create_start_menu_shortcut(executable: &Path) -> Result<PathBuf, AppError> {
@@ -225,13 +238,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn development_binaries_are_detected_before_shortcut_updates() {
-        assert!(is_direct_development_binary(Path::new(
-            r"C:\repo\src-tauri\target\debug\PixelDone.exe"
-        )));
-        assert!(!is_direct_development_binary(Path::new(
-            r"C:\Users\Miles\AppData\Local\PixelDone\PixelDone.exe"
-        )));
+    fn direct_builds_reuse_the_installed_notification_executable() {
+        let root = std::env::temp_dir().join(format!(
+            "pixeldone-notification-identity-{}",
+            std::process::id()
+        ));
+        let installed = root.join("PixelDone").join("PixelDone.exe");
+        std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        std::fs::write(&installed, b"installed").unwrap();
+
+        let direct = Path::new(r"C:\repo\src-tauri\target\debug\PixelDone.exe");
+        assert_eq!(
+            notification_identity_executable(direct, Some(&root)).unwrap(),
+            installed
+        );
+        assert!(notification_identity_executable(direct, None).is_err());
+        assert_eq!(
+            notification_identity_executable(&installed, None).unwrap(),
+            installed
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

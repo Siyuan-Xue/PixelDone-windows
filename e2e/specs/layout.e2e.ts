@@ -3,6 +3,17 @@ import { bootstrap, invoke } from '../helpers';
 const DOCK_ACTIONS = ['SORT', 'DEADLINE', 'HIDE_DONE', 'DELETE_DONE'] as const;
 const PLACEMENTS = ['LEFT_EDGE', 'CENTER', 'RIGHT_EDGE'] as const;
 
+async function invokeWithLatestRevision(command: string, args: Record<string, unknown>): Promise<any> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const snapshot = await bootstrap();
+    try {
+      return await invoke(command, { ...args, expectedRevision: snapshot.revision });
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
+  }
+}
+
 async function selectChecklist(checklistId: string): Promise<void> {
   const snapshot = await bootstrap();
   if (snapshot.selectedChecklistId !== checklistId) {
@@ -83,7 +94,7 @@ describe('PixelDone 3.1.3 desktop layout', () => {
       if (todoId) {
         const snapshot = await bootstrap();
         if (snapshot.checklists.some((list: any) => list.kind === 'TRASH' && list.items.some((item: any) => item.id === todoId))) {
-          await invoke('purge_todo', { expectedRevision: snapshot.revision, todoId });
+          await invokeWithLatestRevision('purge_todo', { todoId });
         }
       }
       await browser.refresh();
@@ -175,8 +186,7 @@ describe('PixelDone 3.1.3 desktop layout', () => {
       await browser.keys(['ArrowRight']);
       await browser.waitUntil(async () => (await bootstrap()).settings.sidebarWidthPx === 312);
     } finally {
-      const snapshot = await bootstrap();
-      await invoke('update_settings', { expectedRevision: snapshot.revision, settings: originalSettings });
+      await invokeWithLatestRevision('update_settings', { settings: originalSettings });
       await browser.refresh();
     }
   });
@@ -266,20 +276,13 @@ describe('PixelDone 3.1.3 desktop layout', () => {
         expect(new Set(metrics.sizes.map(({ bottom }) => Math.round(bottom))).size).toBe(1);
       }
     } finally {
-      let snapshot = await bootstrap();
-      await invoke('update_settings', {
-        expectedRevision: snapshot.revision,
-        settings: originalSettings
-      });
-      snapshot = await bootstrap();
+      await invokeWithLatestRevision('update_settings', { settings: originalSettings });
+      const snapshot = await bootstrap();
       if (
         snapshot.selectedChecklistId !== originalChecklistId &&
         snapshot.checklists.some((list: any) => list.id === originalChecklistId)
       ) {
-        await invoke('select_checklist', {
-          expectedRevision: snapshot.revision,
-          checklistId: originalChecklistId
-        });
+        await invokeWithLatestRevision('select_checklist', { checklistId: originalChecklistId });
       }
       await browser.refresh();
     }
@@ -328,8 +331,7 @@ describe('PixelDone 3.1.3 desktop layout', () => {
         expect(positions.plusX).toBe(placement === 'LEFT_EDGE' ? Math.min(...positions.xs) : Math.max(...positions.xs));
       }
     } finally {
-      const snapshot = await bootstrap();
-      await invoke('update_settings', { expectedRevision: snapshot.revision, settings: originalSettings });
+      await invokeWithLatestRevision('update_settings', { settings: originalSettings });
       await setCssViewport(1180, 780);
       await browser.refresh();
     }
@@ -413,18 +415,15 @@ describe('PixelDone 3.1.3 desktop layout', () => {
     } finally {
       let snapshot = await bootstrap();
       if (checklistId && snapshot.selectedChecklistId === checklistId) {
-        await invoke('select_checklist', {
-          expectedRevision: snapshot.revision,
-          checklistId: originalChecklistId
-        });
+        await invokeWithLatestRevision('select_checklist', { checklistId: originalChecklistId });
         snapshot = await bootstrap();
       }
       if (checklistId && snapshot.checklists.some((list: any) => list.id === checklistId)) {
-        await invoke('delete_checklist', { expectedRevision: snapshot.revision, checklistId });
+        await invokeWithLatestRevision('delete_checklist', { checklistId });
         snapshot = await bootstrap();
       }
       if (todoId && snapshot.checklists.some((list: any) => list.kind === 'TRASH' && list.items.some((item: any) => item.id === todoId))) {
-        await invoke('purge_todo', { expectedRevision: snapshot.revision, todoId });
+        await invokeWithLatestRevision('purge_todo', { todoId });
       }
       await setCssViewport(1180, 780);
       await restoreChecklist(originalChecklistId);

@@ -16,10 +16,27 @@
   } from '$lib/components/auth/password';
   import Icon from '$lib/components/common/Icon.svelte';
   import ScriptAwareText from '$lib/components/common/ScriptAwareText.svelte';
-  import DeleteChecklistModal from '$lib/components/shell/DeleteChecklistModal.svelte';
+  import DestructiveActionModal from '$lib/components/shell/DestructiveActionModal.svelte';
   import TodoDock from '$lib/components/shell/TodoDock.svelte';
   import TodoEditorModal from '$lib/components/shell/TodoEditorModal.svelte';
+  import {
+    checklistConfirmation,
+    completedConfirmation,
+    destructivePolicy,
+    legacyDataConfirmation,
+    todoConfirmation,
+    trashAllConfirmation,
+    trashItemConfirmation,
+    type DestructiveConfirmation,
+    type DestructivePolicy
+  } from '$lib/components/shell/destructive';
   import { reconcileEditorMode, type TodoEditorMode } from '$lib/components/shell/editor';
+  import {
+    filterTrashItems,
+    trashSourceName,
+    trashSourceOptions,
+    type TrashPriorityFilter
+  } from '$lib/components/shell/trash';
   import { localeFor, type MessageKey } from '$lib/generated/i18n';
   import type { WindowsMessageKey, WindowsReliabilityMessageKey } from '$lib/i18n/windows';
   import {
@@ -68,9 +85,9 @@
   let newListName = $state('');
   let editingListId = $state<string | null>(null);
   let listNameDraft = $state('');
-  let deleteChecklistTarget = $state<Checklist | null>(null);
-  let deleteChecklistTrigger = $state<HTMLElement | null>(null);
-  let deleteChecklistBusy = $state(false);
+  let destructiveConfirmation = $state<DestructiveConfirmation | null>(null);
+  let destructiveConfirmationTrigger = $state<HTMLElement | null>(null);
+  let destructiveConfirmationBusy = $state(false);
   let completionHold = $state<Record<string, boolean>>({});
   let highlightedTodoId = $state<string | null>(null);
   let authEmail = $state('');
@@ -107,6 +124,10 @@
   let updateProgress = $state<{ downloadedBytes: number; totalBytes: number | null } | null>(null);
   let sidebarWidth = $state(320);
   let resizingSidebar = $state(false);
+  let trashSearchQuery = $state('');
+  let trashPriorityFilter = $state<TrashPriorityFilter>('');
+  let trashChecklistFilter = $state('');
+  let wasTrashSelected = false;
 
   let selectedList = $derived(
     snapshot?.checklists.find((list) => list.id === snapshot?.selectedChecklistId) ?? null
@@ -129,6 +150,19 @@
   });
   let activeItems = $derived(displayItems.filter((item) => !item.completed || completionHold[item.id]));
   let completedItems = $derived(displayItems.filter((item) => item.completed && !completionHold[item.id]));
+  let filteredTrashItems = $derived.by(() => selectedList?.kind === 'TRASH'
+    ? filterTrashItems(selectedList.items, {
+        query: trashSearchQuery,
+        priority: trashPriorityFilter,
+        checklistName: trashChecklistFilter
+      }, locale)
+    : []);
+  let availableTrashSources = $derived.by(() => selectedList?.kind === 'TRASH'
+    ? trashSourceOptions(selectedList.items, locale)
+    : []);
+  let activeDestructivePolicy = $derived(
+    destructiveConfirmation ? destructivePolicy(destructiveConfirmation) : null
+  );
 
   const languageOptions: Array<{ value: AppLanguage; label: string | null }> = [
     { value: 'SYSTEM', label: null },
@@ -188,6 +222,14 @@
     if (snapshot?.auth.signedIn && authModalOpen) closeAuthModal();
   });
 
+  $effect(() => {
+    const inTrash = selectedList?.kind === 'TRASH';
+    if ((wasTrashSelected && !inTrash) || (inTrash && selectedList.items.length === 0)) {
+      resetTrashFilters();
+    }
+    wasTrashSelected = inTrash;
+  });
+
   function t(key: MessageKey): string {
     return uiMessage(locale, key);
   }
@@ -196,8 +238,36 @@
     return uiWindowsMessage(locale, key);
   }
 
+  function formatConfirmationMessage(key: WindowsMessageKey, action: DestructiveConfirmation): string {
+    const count = 'count' in action ? action.count : 0;
+    return wt(key).replaceAll('{count}', String(count));
+  }
+
+  function confirmationTitle(policy: DestructivePolicy): string {
+    return policy.title.source === 'shared' ? t(policy.title.key) : wt(policy.title.key);
+  }
+
+  function confirmationContext(policy: DestructivePolicy): string {
+    if (policy.context === 'trash') return t('field_trash');
+    if (policy.context === 'storage') return wt('storagePrivacy');
+    return wt('checklists');
+  }
+
+  function confirmationTarget(policy: DestructivePolicy): string {
+    return policy.target.kind === 'label'
+      ? policy.target.value
+      : wt(policy.target.count === 1 ? 'taskCountOne' : 'taskCount')
+          .replace('{count}', String(policy.target.count));
+  }
+
   function rt(key: WindowsReliabilityMessageKey): string {
     return uiWindowsReliabilityMessage(locale, key);
+  }
+
+  function resetTrashFilters(): void {
+    trashSearchQuery = '';
+    trashPriorityFilter = '';
+    trashChecklistFilter = '';
   }
 
   function languageTagFor(language: AppLanguage): string {
@@ -245,13 +315,6 @@
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  }
-
-  async function deleteLegacyData(): Promise<void> {
-    if (!storageInfo?.legacyRoamingDatabasePath) return;
-    if (!confirm(wt('legacyDeleteConfirm'))) return;
-    await api.deleteLegacyRoamingData(true);
-    storageInfo = await api.getStorageInfo();
   }
 
   function applyPresentationSettings(): void {
@@ -540,6 +603,108 @@
     }
   }
 
+  function openDestructiveConfirmation(action: DestructiveConfirmation, trigger: HTMLElement): void {
+    destructiveConfirmation = action;
+    destructiveConfirmationTrigger = trigger;
+    destructiveConfirmationBusy = false;
+  }
+
+  function closeDestructiveConfirmation(restoreFocus = true): void {
+    if (destructiveConfirmationBusy) return;
+    const trigger = destructiveConfirmationTrigger;
+    destructiveConfirmation = null;
+    destructiveConfirmationTrigger = null;
+    if (restoreFocus) requestAnimationFrame(() => trigger?.focus());
+  }
+
+  function focusAfterDestructiveAction(action: DestructiveConfirmation, trigger: HTMLElement | null): void {
+    const triggerButton = trigger instanceof HTMLButtonElement ? trigger : null;
+    if (trigger?.isConnected && !triggerButton?.disabled) {
+      trigger.focus();
+      return;
+    }
+    const selector = action.kind === 'checklist'
+      ? '.new-list-button'
+      : action.kind === 'trash-item'
+        ? '.trash-search'
+        : action.kind === 'trash-all'
+          ? '.special-row.active'
+          : action.kind === 'legacy-data'
+            ? '.storage-row .setting-icon-button'
+            : '.dock-add';
+    document.querySelector<HTMLElement>(selector)?.focus();
+  }
+
+  function requestDeleteSelected(trigger: HTMLElement): void {
+    if (!selectedList || !selectedTodo) return;
+    openDestructiveConfirmation(
+      todoConfirmation(selectedList.id, selectedTodo.id, selectedTodo.title),
+      trigger
+    );
+  }
+
+  function requestDeleteCompleted(trigger: HTMLElement): void {
+    if (selectedList?.kind !== 'NORMAL') return;
+    const count = selectedList.items.filter((item) => item.completed).length;
+    if (count > 0) openDestructiveConfirmation(completedConfirmation(selectedList.id, count), trigger);
+  }
+
+  function requestDeleteChecklist(list: Checklist, trigger: HTMLElement): void {
+    openDestructiveConfirmation(checklistConfirmation(list.id, list.name), trigger);
+  }
+
+  function requestPurgeTrashItem(item: TodoItem, trigger: HTMLElement): void {
+    openDestructiveConfirmation(trashItemConfirmation(item.id, item.title), trigger);
+  }
+
+  function requestPurgeAllTrash(trigger: HTMLElement): void {
+    if (selectedList?.kind !== 'TRASH' || selectedList.items.length === 0) return;
+    openDestructiveConfirmation(trashAllConfirmation(selectedList.items.length), trigger);
+  }
+
+  function requestDeleteLegacyData(trigger: HTMLElement): void {
+    const path = storageInfo?.legacyRoamingDatabasePath;
+    if (path) openDestructiveConfirmation(legacyDataConfirmation(path), trigger);
+  }
+
+  async function confirmDestructiveAction(): Promise<void> {
+    if (!snapshot || !destructiveConfirmation || destructiveConfirmationBusy) return;
+    const action = destructiveConfirmation;
+    const trigger = destructiveConfirmationTrigger;
+    destructiveConfirmationBusy = true;
+    let succeeded = false;
+    try {
+      if (action.kind === 'todo') {
+        succeeded = Boolean(await commit((revision) => api.moveTodoToTrash(revision, action.checklistId, action.todoId)));
+      } else if (action.kind === 'completed') {
+        succeeded = Boolean(await commit((revision) => api.cleanCompleted(revision, action.checklistId)));
+      } else if (action.kind === 'checklist') {
+        succeeded = Boolean(await commit((revision) => api.deleteChecklist(revision, action.checklistId)));
+      } else if (action.kind === 'trash-item') {
+        succeeded = Boolean(await commit((revision) => api.purgeTodo(revision, action.todoId)));
+      } else if (action.kind === 'trash-all') {
+        succeeded = Boolean(await commit((revision) => api.purgeAllTrash(revision)));
+      } else {
+        try {
+          await api.deleteLegacyRoamingData(true);
+          storageInfo = await api.getStorageInfo();
+          succeeded = true;
+        } catch (error) {
+          showWorkspaceNotice('error', errorText(error));
+        }
+      }
+
+      if (!succeeded) return;
+      destructiveConfirmation = null;
+      destructiveConfirmationTrigger = null;
+      if (action.kind === 'todo') closeEditor(false);
+      if (action.kind === 'trash-item' || action.kind === 'trash-all') selectedTodoId = null;
+      requestAnimationFrame(() => focusAfterDestructiveAction(action, trigger));
+    } finally {
+      destructiveConfirmationBusy = false;
+    }
+  }
+
   async function submitNewList(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (!snapshot || !newListName.trim()) return;
@@ -558,36 +723,6 @@
   async function saveListName(): Promise<void> {
     if (!snapshot || !editingListId) return;
     if (await commit((revision) => api.renameChecklist(revision, editingListId!, listNameDraft))) editingListId = null;
-  }
-
-  function openDeleteChecklistModal(list: Checklist, trigger: HTMLElement): void {
-    deleteChecklistTarget = list;
-    deleteChecklistTrigger = trigger;
-    deleteChecklistBusy = false;
-  }
-
-  function closeDeleteChecklistModal(restoreFocus = true): void {
-    if (deleteChecklistBusy) return;
-    const trigger = deleteChecklistTrigger;
-    deleteChecklistTarget = null;
-    deleteChecklistTrigger = null;
-    if (restoreFocus) requestAnimationFrame(() => trigger?.focus());
-  }
-
-  async function confirmDeleteChecklist(): Promise<void> {
-    if (!snapshot || !deleteChecklistTarget || deleteChecklistBusy) return;
-    const checklistId = deleteChecklistTarget.id;
-    deleteChecklistBusy = true;
-    try {
-      const result = await commit((revision) => api.deleteChecklist(revision, checklistId));
-      if (result) {
-        deleteChecklistTarget = null;
-        deleteChecklistTrigger = null;
-        requestAnimationFrame(() => document.querySelector<HTMLElement>('.new-list-button')?.focus());
-      }
-    } finally {
-      deleteChecklistBusy = false;
-    }
   }
 
   async function toggleSort(): Promise<void> {
@@ -614,10 +749,6 @@
       await commit((revision) => api.setDeadlineCountdown(revision, next));
     }
   }
-  async function cleanCompleted(): Promise<void> {
-    if (snapshot && selectedList?.kind === 'NORMAL') await commit((revision) => api.cleanCompleted(revision, selectedList.id));
-  }
-
   async function updateSettings(settings: AppSettings): Promise<void> {
     if (snapshot) await commit((revision) => api.updateSettings(revision, settings));
   }
@@ -639,9 +770,9 @@
     await updateSettings({ ...snapshot.settings, dock: { ...snapshot.settings.dock, actions } });
   }
 
-  async function trashAction(item: TodoItem, action: 'restore' | 'purge'): Promise<void> {
+  async function restoreTrashItem(item: TodoItem): Promise<void> {
     if (!snapshot) return;
-    await commit((revision) => action === 'restore' ? api.restoreTodo(revision, item.id) : api.purgeTodo(revision, item.id));
+    await commit((revision) => api.restoreTodo(revision, item.id));
     selectedTodoId = null;
   }
 
@@ -862,11 +993,11 @@
     }
   }
 
-  function dockAction(action: DockAction): void {
+  function dockAction(action: DockAction, trigger: HTMLElement): void {
     if (action === 'SORT') void toggleSort();
     if (action === 'DEADLINE') void toggleDeadline();
     if (action === 'HIDE_DONE') void toggleHideDone();
-    if (action === 'DELETE_DONE') void cleanCompleted();
+    if (action === 'DELETE_DONE') requestDeleteCompleted(trigger);
     if (action === 'BATCH_DELETE') void toggleQuickDelete();
   }
 
@@ -998,7 +1129,7 @@
   }
 
   function handleKeys(event: KeyboardEvent): void {
-    if (deleteChecklistTarget) return;
+    if (destructiveConfirmation) return;
     if (event.key === 'Escape') {
       if (previewData) {
         previewData = null;
@@ -1064,7 +1195,7 @@
             {#if editingListId !== list.id}
               <div class="nav-actions">
                 <button class="row-more" title={t('edit_list')} aria-label={`${t('edit_list')}: ${list.name}`} onclick={() => beginRename(list)}><Icon name="edit" /></button>
-                {#if normalLists.length > 1}<button class="row-delete" title={t('delete_list')} aria-label={`${t('delete_list')}: ${list.name}`} aria-haspopup="dialog" onclick={(event) => openDeleteChecklistModal(list, event.currentTarget)}><Icon name="trash" /></button>{/if}
+                {#if normalLists.length > 1}<button class="row-delete" title={t('delete_list')} aria-label={`${t('delete_list')}: ${list.name}`} aria-haspopup="dialog" onclick={(event) => requestDeleteChecklist(list, event.currentTarget)}><Icon name="trash" /></button>{/if}
               </div>
             {/if}
           </div>
@@ -1168,10 +1299,75 @@
           {#if selectedList.items.length === 0}
             <div class="empty-state"><span class="empty-glyph">×</span><h3>{t('trash_empty')}</h3><p>{t('trash_retention')}</p></div>
           {:else}
-            <div class="trash-toolbar"><button class="danger-button" onclick={() => void commit((revision) => api.purgeAllTrash(revision))}>{t('delete_all')}</button></div>
-            {#each selectedList.items as item (item.id)}
-              <article class="task-row trash-row"><div class="task-copy"><strong dir="auto"><ScriptAwareText text={item.title} /></strong><span>{t('from_list')} <ScriptAwareText text={item.trashedFromChecklistName ?? 'MAIN'} role="serif" /></span></div><button class="quiet-button" onclick={() => void trashAction(item, 'restore')}>{t('restore_task')}</button><button class="danger-button" onclick={() => void trashAction(item, 'purge')}>{t('delete')}</button></article>
-            {/each}
+            <div class="trash-toolbar">
+              <div class="trash-filters" role="search" aria-label={wt('trashSearchPlaceholder')}>
+                <input
+                  class="trash-search"
+                  data-testid="trash-search"
+                  type="search"
+                  aria-label={wt('trashSearchPlaceholder')}
+                  placeholder={wt('trashSearchPlaceholder')}
+                  bind:value={trashSearchQuery}
+                />
+                <select
+                  class="trash-filter"
+                  data-testid="trash-priority-filter"
+                  aria-label={t('field_priority')}
+                  bind:value={trashPriorityFilter}
+                >
+                  <option value="">{wt('allPriorities')}</option>
+                  {#each ['XHIGH', 'HIGH', 'MEDIUM', 'LOW'] as priority}
+                    <option value={priority}>{priorityLabel(priority as TodoPriority)}</option>
+                  {/each}
+                </select>
+                <select
+                  class="trash-filter"
+                  data-testid="trash-checklist-filter"
+                  aria-label={t('field_checklist')}
+                  bind:value={trashChecklistFilter}
+                >
+                  <option value="">{wt('allChecklists')}</option>
+                  {#each availableTrashSources as checklistName}
+                    <option value={checklistName}>{checklistName}</option>
+                  {/each}
+                </select>
+              </div>
+              <button
+                class="danger-button trash-delete-all"
+                data-testid="trash-delete-all"
+                aria-haspopup="dialog"
+                onclick={(event) => requestPurgeAllTrash(event.currentTarget)}
+              >{t('delete_all')}</button>
+            </div>
+            {#if filteredTrashItems.length === 0}
+              <div class="trash-no-results" data-testid="trash-no-results" role="status">{wt('trashNoMatches')}</div>
+            {:else}
+              {#each filteredTrashItems as item (item.id)}
+                <article
+                  class="task-row trash-row priority-{item.priority.toLowerCase()}"
+                  data-testid="trash-row"
+                  data-todo-id={item.id}
+                >
+                  <div class="task-copy">
+                    <strong dir="auto"><ScriptAwareText text={item.title} /></strong>
+                    <span class="trash-source"><ScriptAwareText text={trashSourceName(item)} role="serif" /></span>
+                  </div>
+                  <button
+                    class="trash-action trash-restore"
+                    title={`${t('restore_task')}: ${item.title}`}
+                    aria-label={`${t('restore_task')}: ${item.title}`}
+                    onclick={() => void restoreTrashItem(item)}
+                  ><Icon name="restore" size={20} /></button>
+                  <button
+                    class="trash-action trash-delete"
+                    title={`${t('delete')}: ${item.title}`}
+                    aria-label={`${t('delete')}: ${item.title}`}
+                    aria-haspopup="dialog"
+                    onclick={(event) => requestPurgeTrashItem(item, event.currentTarget)}
+                  ><Icon name="trash" size={20} /></button>
+                </article>
+              {/each}
+            {/if}
           {/if}
         </div>
       {:else}
@@ -1247,7 +1443,7 @@
               <div class="setting-row storage-row"><div><strong>SQLite</strong><p><code>{storageInfo.databasePath}</code></p></div></div>
               <div class="setting-row storage-row"><div><strong>WebView2</strong><p><code>{storageInfo.webviewDataPath}</code></p></div></div>
               <div class="setting-row storage-row"><div><strong>Windows Credential Manager</strong><p><code>{storageInfo.credentialManagerTarget}</code></p></div></div>
-              {#if storageInfo.legacyRoamingDatabasePath}<div class="setting-row storage-row"><div><strong>{wt('legacyDataFound')}</strong><p><code>{storageInfo.legacyRoamingDatabasePath}</code> · {formatBytes(storageInfo.legacyRoamingDatabaseBytes ?? 0)}</p></div><button class="setting-icon-button danger" title={t('delete')} aria-label={t('delete')} onclick={() => void deleteLegacyData()}><Icon name="trash" size={20} /></button></div>{/if}
+              {#if storageInfo.legacyRoamingDatabasePath}<div class="setting-row storage-row"><div><strong>{wt('legacyDataFound')}</strong><p><code>{storageInfo.legacyRoamingDatabasePath}</code> · {formatBytes(storageInfo.legacyRoamingDatabaseBytes ?? 0)}</p></div><button class="setting-icon-button danger" title={t('delete')} aria-label={t('delete')} aria-haspopup="dialog" onclick={(event) => requestDeleteLegacyData(event.currentTarget)}><Icon name="trash" size={20} /></button></div>{/if}
             {/if}
           </section>
           </div>
@@ -1257,13 +1453,18 @@
 
   </main>
 
-  {#if deleteChecklistTarget}
-    <DeleteChecklistModal
+  {#if destructiveConfirmation && activeDestructivePolicy}
+    <DestructiveActionModal
       {locale}
-      checklistName={deleteChecklistTarget.name}
-      busy={deleteChecklistBusy}
-      onConfirm={confirmDeleteChecklist}
-      onClose={closeDeleteChecklistModal}
+      context={confirmationContext(activeDestructivePolicy)}
+      title={confirmationTitle(activeDestructivePolicy)}
+      target={confirmationTarget(activeDestructivePolicy)}
+      detail={formatConfirmationMessage(activeDestructivePolicy.detailKey, destructiveConfirmation)}
+      busy={destructiveConfirmationBusy}
+      confirmLabel={t(activeDestructivePolicy.confirmKey)}
+      busyLabel={wt('deleting')}
+      onConfirm={confirmDestructiveAction}
+      onClose={closeDestructiveConfirmation}
     />
   {/if}
 
@@ -1313,7 +1514,7 @@
       onChooseImage={chooseImage}
       onPreviewImage={() => selectedTodo ? showImagePreview(selectedTodo.id) : undefined}
       onRemoveImage={async () => { if (selectedTodo) await commit((revision) => api.deleteImage(revision, selectedList.id, selectedTodo.id)); }}
-      onDelete={moveSelectedToTrash}
+      onDelete={requestDeleteSelected}
     />
   {/if}
 
