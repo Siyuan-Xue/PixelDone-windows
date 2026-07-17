@@ -35,7 +35,7 @@ function Get-Attachments([long]$ReleaseId) { return @(Invoke-GiteeJson "$ApiBase
 function Upload-Attachment([string]$Path, [long]$ReleaseId) {
     $response = Join-Path $env:RUNNER_TEMP ("gitee-upload-" + [guid]::NewGuid() + ".json")
     try {
-        $status = curl --fail-with-body --show-error --location --http1.1 --connect-timeout 30 --max-time 2700 `
+        $status = curl --fail-with-body --silent --show-error --location --http1.1 --connect-timeout 30 --max-time 3600 `
             --form-string "access_token=$($env:GITEE_ACCESS_TOKEN)" --form-string "owner=$Owner" `
             --form-string "repo=$Repository" --form-string "release_id=$ReleaseId" --form "file=@$Path" `
             --output $response --write-out "%{http_code}" "$ApiBase/releases/$ReleaseId/attach_files"
@@ -45,7 +45,7 @@ function Upload-Attachment([string]$Path, [long]$ReleaseId) {
 function Assert-Attachment([pscustomobject]$Attachment, [string]$ExpectedPath, [long]$ReleaseId) {
     $download = Join-Path $env:RUNNER_TEMP ("gitee-" + [guid]::NewGuid() + "-" + $Attachment.name)
     try {
-        Invoke-WebRequest -Uri "$ApiBase/releases/$ReleaseId/attach_files/$($Attachment.id)/download" -Headers $Headers -OutFile $download -TimeoutSec 2700
+        Invoke-WebRequest -Uri "$ApiBase/releases/$ReleaseId/attach_files/$($Attachment.id)/download" -Headers $Headers -OutFile $download -TimeoutSec 3600
         if ((Get-FileHash -Algorithm SHA256 $download).Hash -ne (Get-FileHash -Algorithm SHA256 $ExpectedPath).Hash) {
             throw "Gitee attachment $($Attachment.name) conflicts with the CI artifact."
         }
