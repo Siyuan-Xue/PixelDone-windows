@@ -42,10 +42,11 @@ Every GitHub and Gitee Release must contain exactly the same bytes for:
 
 ## Workflow handoff
 
-- Confirm that the release workflow was triggered for the intended immutable tag and entered the expected build or recovery path.
-- When the automated workflow has been exercised repeatedly and is considered stable, a Codex task may end while the workflow is still running if no manual work remains other than checking its final conclusion.
-- The handoff must include the workflow URL and its current status. Do not report the workflow or Release as successful before GitHub records a successful conclusion.
-- A known failure, conflicting asset, or partial Release that still requires recovery is remaining manual work and must not be treated as a monitoring-only handoff.
+- The PixelDone Windows formal release workflow has been verified stable.
+- After completing local release verification, committing and pushing `main`, pushing the intended immutable release tag, and confirming that `Release Windows x64` was triggered for that tag and commit, Codex should end the task as soon as no manual work remains.
+- Codex is not required to poll the workflow to completion, watch individual jobs, or verify the final GitHub and Gitee assets during the same task.
+- The handoff must include the workflow URL and its last observed status. A running workflow must not be reported as a successful Release.
+- A known failure, conflicting tag or asset, or partial Release that already requires recovery is remaining manual work and must be handled or reported before ending the task.
 
 ## Application updater fallback
 
