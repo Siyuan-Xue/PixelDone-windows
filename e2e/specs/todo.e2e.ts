@@ -72,6 +72,19 @@ describe('Todo and Dock parity', () => {
       await editorDelete.click();
       await expect($('.destructive-confirmation-modal')).toBeDisplayed();
       await expect($('.destructive-confirmation-target')).toHaveText('EDITOR DELETE CONFIRM');
+      const confirmationLayer = await browser.execute(() => {
+        const confirmation = document.querySelector<HTMLElement>('.destructive-confirmation-backdrop')!;
+        const editor = document.querySelector<HTMLElement>('.editor-backdrop')!;
+        const confirmButton = document.querySelector<HTMLElement>('.destructive-confirmation-confirm')!;
+        const rect = confirmButton.getBoundingClientRect();
+        const topElement = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return {
+          aboveEditor: Number.parseInt(getComputedStyle(confirmation).zIndex, 10)
+            > Number.parseInt(getComputedStyle(editor).zIndex, 10),
+          confirmButtonReceivesPointer: topElement === confirmButton || confirmButton.contains(topElement)
+        };
+      });
+      expect(confirmationLayer).toEqual({ aboveEditor: true, confirmButtonReceivesPointer: true });
       expect((await bootstrap()).checklists.find((list: any) => list.id === checklistId).items
         .some((item: any) => item.id === editorTodo)).toBe(true);
       await $('.destructive-confirmation-actions .quiet-button').click();

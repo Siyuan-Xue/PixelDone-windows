@@ -7,8 +7,8 @@ const allowed = new Set(['not_started', 'in_progress', 'blocked', 'verified']);
 const failures: string[] = [];
 const root = fileURLToPath(new URL('..', import.meta.url));
 
-if (manifest.windowsTarget.version !== '3.2.8') {
-  failures.push(`release target: expected Windows 3.2.8, found ${manifest.windowsTarget.version}`);
+if (manifest.windowsTarget.version !== '3.2.9') {
+  failures.push(`release target: expected Windows 3.2.9, found ${manifest.windowsTarget.version}`);
 }
 for (const path of manifest.windowsTarget.evidence) {
   if (!existsSync(`${root}/${path}`)) failures.push(`release target: evidence file not found ${path}`);

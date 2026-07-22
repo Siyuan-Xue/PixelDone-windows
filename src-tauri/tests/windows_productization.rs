@@ -7,7 +7,7 @@ fn formal_config_uses_professional_identity_and_protocol() {
     let config: serde_json::Value =
         serde_json::from_str(&fs::read_to_string("tauri.conf.json").unwrap()).unwrap();
     assert_eq!(config["productName"], "PixelDone");
-    assert_eq!(config["version"], "3.2.8");
+    assert_eq!(config["version"], "3.2.9");
     assert_eq!(config["mainBinaryName"], "PixelDone");
     assert_eq!(
         config["plugins"]["deep-link"]["desktop"]["schemes"][0],
