@@ -55,7 +55,10 @@ describe('Todo and Dock parity', () => {
         settings: {
           ...snapshot.settings,
           languageMode: 'ENGLISH',
-          dock: { ...snapshot.settings.dock, actions: ['SORT', 'DELETE_DONE', 'BATCH_DELETE'] }
+          dock: {
+            ...snapshot.settings.dock,
+            actions: ['SORT', 'DELETE_DONE', 'BATCH_DELETE', 'EXPORT_MARKDOWN']
+          }
         }
       });
       const shown = await invoke('set_hide_completed', {
@@ -64,6 +67,17 @@ describe('Todo and Dock parity', () => {
       });
       await invoke('set_quick_delete', { expectedRevision: shown.revision, quickDelete: false });
       await browser.refresh();
+
+      const exportMarkdown = $('[data-action="EXPORT_MARKDOWN"]');
+      await exportMarkdown.click();
+      await expect($('.export-markdown-modal')).toBeDisplayed();
+      expect(await $('.export-markdown-content').getText()).toContain('current checklist');
+      await browser.keys(['Escape']);
+      await expect(exportMarkdown).toBeFocused();
+      await exportMarkdown.click();
+      await $('.export-markdown-actions .primary-button').click();
+      await browser.waitUntil(async () => !(await $('.export-markdown-modal').isExisting()));
+      await expect($('.operation-notice.success')).toHaveText('Markdown copied');
 
       const editorRow = $(`//*[contains(@class,'task-row')][.//strong[normalize-space(.)='EDITOR DELETE CONFIRM']]`);
       await editorRow.$('.task-open').click();

@@ -69,7 +69,12 @@ const english = {
   trashSearchPlaceholder: 'Search deleted tasks',
   allPriorities: 'All priorities',
   allChecklists: 'All checklists',
-  trashNoMatches: 'No deleted tasks match these filters'
+  trashNoMatches: 'No deleted tasks match these filters',
+  exportMarkdown: 'Export Markdown',
+  exportMarkdownDetail: 'Copy the current checklist as Markdown.',
+  detailedCopy: 'Detailed copy',
+  simpleCopy: 'Simple copy',
+  markdownCopied: 'Markdown copied'
 } as const;
 
 export type WindowsMessageKey = keyof typeof english;
@@ -131,7 +136,12 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     trashSearchPlaceholder: '\u641c\u7d22\u5df2\u5220\u9664\u5f85\u529e',
     allPriorities: '\u5168\u90e8\u4f18\u5148\u7ea7',
     allChecklists: '\u5168\u90e8\u6e05\u5355',
-    trashNoMatches: '\u6ca1\u6709\u7b26\u5408\u5f53\u524d\u6761\u4ef6\u7684\u5df2\u5220\u9664\u5f85\u529e'
+    trashNoMatches: '\u6ca1\u6709\u7b26\u5408\u5f53\u524d\u6761\u4ef6\u7684\u5df2\u5220\u9664\u5f85\u529e',
+    exportMarkdown: '\u5bfc\u51fa Markdown',
+    exportMarkdownDetail: '\u5c06\u5f53\u524d\u6e05\u5355\u590d\u5236\u4e3a Markdown\u3002',
+    detailedCopy: '\u8be6\u7ec6\u590d\u5236',
+    simpleCopy: '\u7b80\u7565\u590d\u5236',
+    markdownCopied: '\u5df2\u590d\u5236 Markdown'
   },
   ar: {
     productKind: 'أداة بكسل', maker: 'CODEX & XUE', checklists: 'قوائم المهام', active: 'نشطة', done: 'مكتملة',
@@ -171,7 +181,12 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     trashSearchPlaceholder: 'البحث في المهام المحذوفة',
     allPriorities: 'كل الأولويات',
     allChecklists: 'كل القوائم',
-    trashNoMatches: 'لا توجد مهام محذوفة تطابق عوامل التصفية'
+    trashNoMatches: 'لا توجد مهام محذوفة تطابق عوامل التصفية',
+    exportMarkdown: 'تصدير Markdown',
+    exportMarkdownDetail: 'نسخ القائمة الحالية بصيغة Markdown.',
+    detailedCopy: 'نسخ مفصل',
+    simpleCopy: 'نسخ مبسط',
+    markdownCopied: 'تم نسخ Markdown'
   },
   fr: {
     productKind: 'OUTIL PIXEL', maker: 'CODEX & XUE', checklists: 'LISTES', active: 'ACTIVES', done: 'TERMINÉES',
@@ -211,7 +226,12 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     trashSearchPlaceholder: 'Rechercher dans les tâches supprimées',
     allPriorities: 'Toutes les priorités',
     allChecklists: 'Toutes les listes',
-    trashNoMatches: 'Aucune tâche supprimée ne correspond aux filtres'
+    trashNoMatches: 'Aucune tâche supprimée ne correspond aux filtres',
+    exportMarkdown: 'Exporter en Markdown',
+    exportMarkdownDetail: 'Copier la liste actuelle en Markdown.',
+    detailedCopy: 'Copie détaillée',
+    simpleCopy: 'Copie simple',
+    markdownCopied: 'Markdown copié'
   },
   ru: {
     productKind: 'ПИКСЕЛЬНЫЙ ИНСТРУМЕНТ', maker: 'CODEX & XUE', checklists: 'СПИСКИ', active: 'АКТИВНЫЕ', done: 'ГОТОВО',
@@ -251,7 +271,12 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     trashSearchPlaceholder: 'Поиск удалённых задач',
     allPriorities: 'Все приоритеты',
     allChecklists: 'Все списки',
-    trashNoMatches: 'Нет удалённых задач, соответствующих фильтрам'
+    trashNoMatches: 'Нет удалённых задач, соответствующих фильтрам',
+    exportMarkdown: 'Экспорт Markdown',
+    exportMarkdownDetail: 'Скопировать текущий список в Markdown.',
+    detailedCopy: 'Подробная копия',
+    simpleCopy: 'Краткая копия',
+    markdownCopied: 'Markdown скопирован'
   },
   es: {
     productKind: 'UTILIDAD PÍXEL', maker: 'CODEX & XUE', checklists: 'LISTAS', active: 'ACTIVAS', done: 'HECHAS',
@@ -291,7 +316,12 @@ const translations: Record<Locale, Record<WindowsMessageKey, string>> = {
     trashSearchPlaceholder: 'Buscar tareas eliminadas',
     allPriorities: 'Todas las prioridades',
     allChecklists: 'Todas las listas',
-    trashNoMatches: 'Ninguna tarea eliminada coincide con los filtros'
+    trashNoMatches: 'Ninguna tarea eliminada coincide con los filtros',
+    exportMarkdown: 'Exportar Markdown',
+    exportMarkdownDetail: 'Copiar la lista actual como Markdown.',
+    detailedCopy: 'Copia detallada',
+    simpleCopy: 'Copia simple',
+    markdownCopied: 'Markdown copiado'
   }
 };
 

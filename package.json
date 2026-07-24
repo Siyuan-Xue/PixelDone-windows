@@ -1,6 +1,6 @@
 {
   "name": "pixeldone-windows",
-  "version": "3.2.9",
+  "version": "3.3.0",
   "description": "Rust-first Windows client for PixelDone",
   "type": "module",
   "private": true,
@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2"
   },

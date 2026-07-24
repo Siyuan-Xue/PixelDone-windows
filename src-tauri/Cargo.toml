@@ -1,6 +1,6 @@
 [package]
 name = "pixeldone-windows"
-version = "3.2.9"
+version = "3.3.0"
 description = "Rust-first Windows client for PixelDone"
 authors = ["CODEX & XUE"]
 edition = "2024"
@@ -38,6 +38,7 @@ sha2 = "0.10"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2.5"
+tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2.7"
 tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "2.4"

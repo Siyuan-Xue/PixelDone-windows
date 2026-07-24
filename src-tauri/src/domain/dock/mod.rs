@@ -16,6 +16,7 @@ pub enum DockAction {
     HideDone,
     DeleteDone,
     BatchDelete,
+    ExportMarkdown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

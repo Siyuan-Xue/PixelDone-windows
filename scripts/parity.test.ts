@@ -2,13 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { loadManifest, summarize } from './parity';
 
 describe('parity manifest', () => {
-  test('targets Windows 3.2.9 while preserving the audited Android baseline', async () => {
+  test('targets Windows 3.3.0 while preserving the audited Android baseline', async () => {
     const manifest = await loadManifest();
     expect(manifest.windowsTarget).toEqual({
       product: 'PixelDone Windows',
-      version: '3.2.9',
+      version: '3.3.0',
       stage: 'formal_release',
-      evidence: ['parity/evidence/windows/candidate-3.2.9.md'],
+      evidence: ['parity/evidence/windows/candidate-3.3.0.md'],
       authorizedIncompleteRows: [
         'IMAGE-LOCAL-001',
         'AUTH-001',
@@ -24,7 +24,7 @@ describe('parity manifest', () => {
     expect(summarize(manifest).required).toBeGreaterThan(35);
   });
 
-  test('records the 3.2.9 installer as verified while cloud exceptions stay explicit', async () => {
+  test('records the 3.3.0 installer and Markdown export while cloud exceptions stay explicit', async () => {
     const manifest = await loadManifest();
     for (const id of ['LIST-FIXED-001', 'TODO-CRUD-001', 'SETTINGS-DOCK-001']) {
       const row = manifest.rows.find((candidate) => candidate.id === id);
@@ -32,7 +32,13 @@ describe('parity manifest', () => {
     }
     const installer = manifest.rows.find((candidate) => candidate.id === 'RELEASE-NSIS-001');
     expect(installer?.status).toBe('verified');
-    expect(installer?.evidence.windows).toContain('parity/evidence/windows/candidate-3.2.9.md');
+    expect(installer?.evidence.windows).toContain('parity/evidence/windows/candidate-3.3.0.md');
+    const markdownExport = manifest.rows.find((candidate) => candidate.id === 'DOCK-EXPORT-001');
+    expect(markdownExport?.status).toBe('verified');
+    expect(markdownExport?.variance).toBe('none');
+    const androidWidget = manifest.rows.find((candidate) => candidate.id === 'ANDROID-WIDGET-001');
+    expect(androidWidget?.requiredForRelease).toBeFalse();
+    expect(androidWidget?.variance).toContain('platform-specific');
     const cloudImage = manifest.rows.find((candidate) => candidate.id === 'IMAGE-CLOUD-EXCLUDED');
     expect(cloudImage?.requiredForRelease).toBeTrue();
     expect(cloudImage?.status).toBe('in_progress');

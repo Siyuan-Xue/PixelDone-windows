@@ -26,10 +26,11 @@
     | 'update'
     | 'download'
     | 'folder'
-    | 'restore';
+    | 'restore'
+    | 'export';
   let { name, size = 16, active = false }: { name: IconName; size?: number; active?: boolean } = $props();
   let cloudAction = $derived(name === 'login' || name === 'logout' || name === 'sync');
-  let dockAction = $derived(['sort', 'calendar', 'hide', 'trash-check', 'batch-delete'].includes(name));
+  let dockAction = $derived(['sort', 'calendar', 'hide', 'trash-check', 'batch-delete', 'export'].includes(name));
 </script>
 
 <svg
@@ -100,6 +101,10 @@
     <path d="M13.6 6.5h6.6M15.5 4.3h2.8" stroke-width="2.2"></path>
     <rect x="14.5" y="8.5" width="4.8" height="9.3" stroke-width="1.6"></rect>
     <path d="M16 10.2v5.9M17.8 10.2v5.9" stroke-width="1.6"></path>
+  {:else if name === 'export'}
+    <rect x="4" y="3.5" width="10.5" height="15" stroke-width="2.2"></rect>
+    <path d="M7 8h4.5M7 11.5h4.5M7 15h3" stroke-width="1.6"></path>
+    <path d="m12.5 13 6.5-6.5M14.5 6.5H19V11" stroke-width="2.2"></path>
   {:else if name === 'key'}
     <circle cx="5" cy="8" r="3"></circle><path d="M8 8h6M11 8v3M13 8v2"></path>
   {:else if name === 'conflict'}

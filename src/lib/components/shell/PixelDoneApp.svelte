@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
+  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { open } from '@tauri-apps/plugin-dialog';
   import AuthModal from '$lib/components/auth/AuthModal.svelte';
   import PasswordModal from '$lib/components/auth/PasswordModal.svelte';
@@ -17,6 +18,7 @@
   import Icon from '$lib/components/common/Icon.svelte';
   import ScriptAwareText from '$lib/components/common/ScriptAwareText.svelte';
   import DestructiveActionModal from '$lib/components/shell/DestructiveActionModal.svelte';
+  import MarkdownExportModal from '$lib/components/shell/MarkdownExportModal.svelte';
   import TodoDock from '$lib/components/shell/TodoDock.svelte';
   import TodoEditorModal from '$lib/components/shell/TodoEditorModal.svelte';
   import {
@@ -31,6 +33,10 @@
     type DestructivePolicy
   } from '$lib/components/shell/destructive';
   import { reconcileEditorMode, type TodoEditorMode } from '$lib/components/shell/editor';
+  import {
+    exportChecklistToMarkdown,
+    type MarkdownExportMode
+  } from '$lib/components/shell/markdown-export';
   import {
     filterTrashItems,
     trashSourceName,
@@ -88,6 +94,8 @@
   let destructiveConfirmation = $state<DestructiveConfirmation | null>(null);
   let destructiveConfirmationTrigger = $state<HTMLElement | null>(null);
   let destructiveConfirmationBusy = $state(false);
+  let exportMarkdownOpen = $state(false);
+  let exportMarkdownTrigger = $state<HTMLElement | null>(null);
   let completionHold = $state<Record<string, boolean>>({});
   let highlightedTodoId = $state<string | null>(null);
   let authEmail = $state('');
@@ -173,7 +181,7 @@
     { value: 'RUSSIAN', label: 'Русский' },
     { value: 'SPANISH', label: 'Español' }
   ];
-  const allDockActions: DockAction[] = ['SORT', 'DEADLINE', 'HIDE_DONE', 'DELETE_DONE', 'BATCH_DELETE'];
+  const allDockActions: DockAction[] = ['SORT', 'DEADLINE', 'HIDE_DONE', 'DELETE_DONE', 'BATCH_DELETE', 'EXPORT_MARKDOWN'];
   const sidebarMinimumWidth = 200;
   const sidebarMaximumWidth = 720;
   const workspaceMinimumWidth = 440;
@@ -999,6 +1007,7 @@
     if (action === 'HIDE_DONE') void toggleHideDone();
     if (action === 'DELETE_DONE') requestDeleteCompleted(trigger);
     if (action === 'BATCH_DELETE') void toggleQuickDelete();
+    if (action === 'EXPORT_MARKDOWN') openMarkdownExport(trigger);
   }
 
   function dockActive(action: DockAction): boolean {
@@ -1016,11 +1025,59 @@
   }
 
   function dockLabel(action: DockAction): string {
+    if (action === 'EXPORT_MARKDOWN') return wt('exportMarkdown');
     return t(action === 'SORT' ? 'toggle_sort'
       : action === 'DEADLINE' ? 'toggle_deadline'
         : action === 'HIDE_DONE' ? 'toggle_done_visibility'
           : action === 'DELETE_DONE' ? 'clean_completed_tasks'
             : 'toggle_quick_delete');
+  }
+
+  function openMarkdownExport(trigger: HTMLElement): void {
+    if (selectedList?.kind !== 'NORMAL') return;
+    exportMarkdownTrigger = trigger;
+    exportMarkdownOpen = true;
+  }
+
+  function closeMarkdownExport(): void {
+    const trigger = exportMarkdownTrigger;
+    exportMarkdownOpen = false;
+    exportMarkdownTrigger = null;
+    requestAnimationFrame(() => trigger?.focus());
+  }
+
+  async function copyMarkdown(mode: MarkdownExportMode): Promise<void> {
+    if (selectedList?.kind !== 'NORMAL') return;
+    const formatter = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    const markdown = exportChecklistToMarkdown(
+      selectedList,
+      snapshot.sortMode,
+      mode,
+      {
+        priority: t('field_priority'),
+        due: t('field_due'),
+        repeat: t('field_repeat'),
+        none: wt('emptyValue')
+      },
+      {
+        priority: priorityLabel,
+        due: (dueAtMillis) => formatter.format(dueAtMillis),
+        repeat: (repeat) => t(repeat === 'DAILY' ? 'repeat_daily' : repeat === 'WEEKLY' ? 'repeat_weekly' : 'repeat_none')
+      }
+    );
+    try {
+      await writeText(markdown);
+      closeMarkdownExport();
+      showWorkspaceNotice('success', wt('markdownCopied'));
+    } catch (error) {
+      showWorkspaceNotice('error', errorText(error));
+    }
   }
 
   function formatDue(item: TodoItem): string {
@@ -1115,6 +1172,7 @@
   }
 
   function dockSettingsLabel(action: DockAction): string {
+    if (action === 'EXPORT_MARKDOWN') return wt('exportMarkdownDetail');
     return t(action === 'SORT' ? 'sort'
       : action === 'DEADLINE' ? 'deadline_short'
         : action === 'HIDE_DONE' ? 'hide_done'
@@ -1129,7 +1187,7 @@
   }
 
   function handleKeys(event: KeyboardEvent): void {
-    if (destructiveConfirmation) return;
+    if (destructiveConfirmation || exportMarkdownOpen) return;
     if (event.key === 'Escape') {
       if (previewData) {
         previewData = null;
@@ -1417,7 +1475,7 @@
           <section>
             <span class="section-title">{t('settings_dock')}</span>
             <div class="segmented-row">{#each ['LEFT_EDGE', 'CENTER', 'RIGHT_EDGE'] as placement}<button class="dock-placement-button" data-placement={placement} class:active={snapshot.settings.dock.plusPlacement === placement} title={t(placement === 'LEFT_EDGE' ? 'left' : placement === 'CENTER' ? 'center' : 'right')} aria-label={t(placement === 'LEFT_EDGE' ? 'left' : placement === 'CENTER' ? 'center' : 'right')} onclick={() => void setDockPlacement(placement as DockPlusPlacement)}><span class="placement-track"><span class="placement-plus">+</span></span></button>{/each}</div>
-            <div class="dock-choice-grid">{#each allDockActions as action}<button class:selected={snapshot.settings.dock.actions.includes(action)} title={dockSettingsLabel(action)} aria-label={dockSettingsLabel(action)} aria-pressed={snapshot.settings.dock.actions.includes(action)} onclick={() => void toggleDockAction(action)}><Icon name={action === 'SORT' ? 'sort' : action === 'DEADLINE' ? 'calendar' : action === 'HIDE_DONE' ? 'hide' : action === 'DELETE_DONE' ? 'trash-check' : 'batch-delete'} size={20} active={action === 'SORT' && snapshot.sortMode === 'TIME'} /></button>{/each}</div>
+            <div class="dock-choice-grid">{#each allDockActions as action}<button class:selected={snapshot.settings.dock.actions.includes(action)} title={dockSettingsLabel(action)} aria-label={dockSettingsLabel(action)} aria-pressed={snapshot.settings.dock.actions.includes(action)} onclick={() => void toggleDockAction(action)}><Icon name={action === 'SORT' ? 'sort' : action === 'DEADLINE' ? 'calendar' : action === 'HIDE_DONE' ? 'hide' : action === 'DELETE_DONE' ? 'trash-check' : action === 'BATCH_DELETE' ? 'batch-delete' : 'export'} size={20} active={action === 'SORT' && snapshot.sortMode === 'TIME'} /></button>{/each}</div>
           </section>
 
           <section>
@@ -1465,6 +1523,19 @@
       busyLabel={wt('deleting')}
       onConfirm={confirmDestructiveAction}
       onClose={closeDestructiveConfirmation}
+    />
+  {/if}
+
+  {#if exportMarkdownOpen && selectedList.kind === 'NORMAL'}
+    <MarkdownExportModal
+      title={wt('exportMarkdown')}
+      detail={wt('exportMarkdownDetail')}
+      detailedLabel={wt('detailedCopy')}
+      simpleLabel={wt('simpleCopy')}
+      closeLabel={t('close')}
+      onDetailed={() => copyMarkdown('detailed')}
+      onSimple={() => copyMarkdown('simple')}
+      onClose={closeMarkdownExport}
     />
   {/if}
 

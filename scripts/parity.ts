@@ -41,9 +41,10 @@ interface ParityReleaseOverlay {
   windowsTarget: ParityManifest['windowsTarget'];
   overrideGroups: ParityOverrideGroup[];
   rowOverrides?: Record<string, Partial<ParityRow>>;
+  addedRows?: ParityRow[];
 }
 
-export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.2.9.yaml';
+export const CURRENT_PARITY_MANIFEST = 'parity/pixeldone-3.3.0.yaml';
 
 export async function loadManifest(): Promise<ParityManifest> {
   const overlayUrl = new URL(`../${CURRENT_PARITY_MANIFEST}`, import.meta.url);
@@ -61,15 +62,20 @@ export async function loadManifest(): Promise<ParityManifest> {
   }
 
   const knownRows = new Set(baseline.rows.map((row) => row.id));
+  for (const row of overlay.addedRows ?? []) {
+    if (knownRows.has(row.id)) throw new Error(`Duplicate parity row ${row.id}`);
+    knownRows.add(row.id);
+  }
   for (const rowId of overrides.keys()) {
     if (!knownRows.has(rowId)) throw new Error(`Unknown parity override row ${rowId}`);
   }
 
+  const rows = [...baseline.rows, ...(overlay.addedRows ?? [])];
   return {
     schemaVersion: overlay.schemaVersion,
     baseline: baseline.baseline,
     windowsTarget: overlay.windowsTarget,
-    rows: baseline.rows.map((row) => {
+    rows: rows.map((row) => {
       const patch = overlay.rowOverrides?.[row.id];
       const patched = patch ? {
         ...row,

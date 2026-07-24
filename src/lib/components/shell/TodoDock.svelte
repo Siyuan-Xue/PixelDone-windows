@@ -28,7 +28,8 @@
     DEADLINE: 'calendar',
     HIDE_DONE: 'hide',
     DELETE_DONE: 'trash-check',
-    BATCH_DELETE: 'batch-delete'
+    BATCH_DELETE: 'batch-delete',
+    EXPORT_MARKDOWN: 'export'
   } as const;
 </script>
 
